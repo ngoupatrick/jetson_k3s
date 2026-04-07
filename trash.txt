@@ -1585,7 +1585,7 @@ spec:
               memory: "128Mi"
               cpu: "100m"
             limits:
-              memory: "2Gi"
+              memory: "2.5Gi"
           # Health check ensures the registry is responding
           livenessProbe:
             httpGet:
