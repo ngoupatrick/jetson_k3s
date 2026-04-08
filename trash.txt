@@ -12,6 +12,10 @@
 - k3S v1.24.17+k3s1 :
 	https://docs.k3s.io/release-notes-old/v1.24.X
 	https://blog.alphabravo.io/part-3-k3s-zero-to-hero-mastering-k3s-configuration-from-yaml-to-cli/
+- models & download
+	https://docs.pytorch.org/vision/stable/index.html
+	https://docs.pytorch.org/vision/stable/models.html
+		https://docs.pytorch.org/vision/stable/models.html#classification # <-- choose a model and go to [SOURCE], you will see the link
 - some commands:
 	watch -n 5 free -h <-- watch RAM every 5s
 
@@ -1169,8 +1173,8 @@ sudo make clean
 	sudo journalctl --vacuum-size=10M
 # ne conserver que les 2 derniers jours
 	sudo journalctl --vacuum-time=2d
-	
-- CLEAN WITH ANSIBLE
+
+- DOCKER CLEAN WITH ANSIBLE 
 vi ~/my_ansible/playbook/clean-docker.yml
 -- debut code
 
@@ -1202,6 +1206,47 @@ vi ~/my_ansible/playbook/clean-docker.yml
 -- fin code
 
 ansible-playbook ~/my_ansible/playbook/clean-docker.yml
+	
+- SYSTEM CLEAN WITH ANSIBLE 
+vi ~/my_ansible/playbook/clean-system.yml
+-- debut code
+- name: Nettoyage complet des noeuds Jetson
+  hosts: slaves
+  become: yes
+  tasks:
+    - name: "Nettoyage Apt (autoremove et autoclean)"
+      apt:
+        autoremove: yes
+        autoclean: yes
+        update_cache: yes
+
+    - name: "Suppression du cache NVIDIA"
+      file:
+        path: "/home/{{ ansible_user }}/.nv/"
+        state: absent
+
+    - name: "Nettoyage Docker system prune"
+      shell: "docker system prune -a -f"
+      args:
+        warn: false
+
+    - name: "Liberation de la RAM (drop_caches)"
+      shell: "sync && echo 3 > /proc/sys/vm/drop_caches"
+      args:
+        warn: false
+
+    - name: "Verification de l'espace disque final"
+      command: "df -h /"
+      register: disk_space
+
+    - name: "Affichage de l'espace restant"
+      debug:
+        msg: "{{ disk_space.stdout_lines[1] }}"
+
+
+-- fin code
+
+ansible-playbook ~/my_ansible/playbook/clean-system.yml -K
 
 - REBOOT
 vi ~/my_ansible/playbook/reboot_node.yml
@@ -1224,6 +1269,7 @@ vi ~/my_ansible/playbook/reboot_node.yml
         msg: "L'hote {{ inventory_hostname }} est de nouveau operationnel."
 
 -- fin code
+ansible-playbook ~/my_ansible/playbook/reboot_node.yml -K
 
 - SHUTDOWN 
 vi ~/my_ansible/playbook/shutdown_node.yml
@@ -1243,6 +1289,35 @@ vi ~/my_ansible/playbook/shutdown_node.yml
         msg: "L'ordre d'extinction a ete envoye a {{ inventory_hostname }}."
 
 -- fin code
+ansible-playbook ~/my_ansible/playbook/shutdown_node.yml -K
+
+- RESTART k3s-agent 
+vi ~/my_ansible/playbook/restart_k3s_agents.yml
+-- debut code
+- name: Redemarrage du service K3s Agent
+  hosts: slaves
+  become: yes
+  tasks:
+    - name: "Relance du service k3s-agent"
+      systemd:
+        name: k3s-agent
+        state: restarted
+        enabled: yes
+
+    - name: "Attente du demarrage du service"
+      pause:
+        seconds: 5
+
+    - name: "Verification du statut du service"
+      command: systemctl is-active k3s-agent
+      register: agent_status
+      changed_when: false
+
+    - name: "Affichage du statut"
+      debug:
+        msg: "Le service k3s-agent sur {{ inventory_hostname }} est {{ agent_status.stdout }}"
+-- fin code
+ansible-playbook ~/my_ansible/playbook/restart_k3s_agents.yml -K
 
 
 
@@ -1281,6 +1356,8 @@ df -h
 
 - install nfs-server (master)
 sudo apt install nfs-kernel-server -y
+sudo systemctl enable nfs-kernel-server
+sudo systemctl start nfs-kernel-server
 sudo chown nobody:nogroup /k3s-ext-1
 sudo chown nobody:nogroup /k3s-ext-2
 
@@ -1298,6 +1375,20 @@ showmount -e picomaster (workers)
 
 - install nfs client (workers)
 sudo apt install nfs-common -y # already installed
+sudo vi /etc/nfsmount.conf
+
+-- debut code
+[ NFSMount_Global_Options ]
+  Proto=tcp
+  Defaultvers=3
+  Nfsvers=3
+  Hard=True
+  Rsize=1048576
+  Wsize=1048576
+-- fin code
+
+# restart k3s-agent
+sudo systemctl restart k3s-agent
 
 - association des volumes nfs avec k3s (BOTH USB)
 sudo vi /data/server/manifests/nfs-provisioner.yaml
@@ -1328,6 +1419,8 @@ spec:
     storageClass.allowVolumeExpansion: "true"
     storageClass.archiveOnDelete: "false"
     storageClass.onDelete: "delete"
+    #nfs.mountOptions: "{nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2}"
+    nfs.mountOptions: "{nfsvers=3,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600}"
 ---
 # this one will retain data on usb2 after pod,pvc will be delete
 apiVersion: helm.cattle.io/v1
@@ -1349,6 +1442,8 @@ spec:
     storageClass.allowVolumeExpansion: "true"
     storageClass.archiveOnDelete: "false"
     storageClass.onDelete: "delete"
+    #nfs.mountOptions: "{nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2}"
+    nfs.mountOptions: "{nfsvers=3,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600}"
 -- fin code
 
 - wait a little for the helm controller to do its thing
@@ -1449,9 +1544,10 @@ spec:
     server: picomaster
     path: /k3s-ext-1/my-storage
   mountOptions:
-    - nfsvers=4.1
+    - nfsvers=3
     - rsize=1048576
     - wsize=1048576
+    - proto=tcp
     - hard
     - timeo=600
 ---
@@ -1623,7 +1719,14 @@ spec:
 k apply -f ~/registry/registry.yaml
 # k delete -f ~/registry/registry.yaml
 
+- restart deployement
+kubectl rollout restart deployment private-registry -n registry
+
+- logs deployement
+k logs -f deployment/private-registry -n registry
+
 - check deployements
+kubectl logs -f deployment/private-registry -n registry # <-- logs of kind deployement
 # Wait for the registry pod to be ready
 kubectl wait --for=condition=ready pod -l app=registry -n registry --timeout=120s
 # Verify the registry is running
@@ -1980,7 +2083,8 @@ sudo mkdir -p /k3s-ext-1/code/models
 
 - add model
 wget https://download.pytorch.org/models/resnet50-0676ba61.pth
-sudo mv resnet50-0676ba61.pth /k3s-ext-1/code/models
+wget https://download.pytorch.org/models/mobilenet_v3_large-5c1a4163.pth
+sudo mv resnet50-0676ba61.pth mobilenet_v3_large-5c1a4163.pth /k3s-ext-1/code/models
 
 - nfs accessibility
 sudo vi /etc/exports
@@ -2000,6 +2104,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms, models
 import time
+from datetime import datetime
 import logging
 import sys
 
@@ -2018,7 +2123,7 @@ LOCAL_WEIGHTS = "/mnt/code/models/resnet50-0676ba61.pth"
 EPOCHS = 3
 BATCH_SIZE = 4  # Reduit pour eviter OOM sur Jetson avec ResNet50
 DATA_DIR = '/mnt/code/images'
-SAVE_PATH = '/mnt/code/glass_model.pth'
+SAVE_PATH = '/mnt/code/glass_model_resnet50.pth'
 
 # 1. Pretraitement
 #print("-- Pretraitement --")
@@ -2060,12 +2165,15 @@ model.train()
 for epoch in range(EPOCHS):
     running_loss = 0.0
     start_time = time.time()
+    start_readable = datetime.fromtimestamp(start_time).strftime('%H:%M:%S')
     logger.info(f"Start time {start_time} - epoch {epoch}...")
     i = 1
     
     for images, labels in train_loader:
         images, labels = images.to(DEVICE), labels.to(DEVICE)
-        logger.info(f"loading image {i}/{total_images}, start_time {start_time} - epoch {epoch}...")
+        if i % 10 == 0:
+            logger.info(f"loading image {i*BATCH_SIZE}, Total images: {total_images}, start_time {start_readable} - epoch {epoch}...")
+        i=i+1
         
         optimizer.zero_grad()
         outputs = model(images)
@@ -2109,7 +2217,7 @@ logger = logging.getLogger(__name__)
 
 logger.info(f"-- Init Device --")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MODEL_PATH = "/mnt/code/glass_model.pth"
+MODEL_PATH = "/mnt/code/glass_model_resnet50.pth"
 # L'ordre doit correspondre à l'ordre alphabetique des dossiers
 # {'empty': 0, 'plastic': 1, 'with-beer': 2, 'with-coffee': 3, 'with-juice': 4, 'with-milk': 5, 'with-tea': 6, 'with-water': 7, 'with-wine': 8}
 CLASSES = ['empty', 'plastic', 'with-beer', 'with-coffee', 'with-juice', 'with-milk', 'with-tea', 'with-water', 'with-wine']
@@ -2153,16 +2261,16 @@ def predict_folder(folder_path):
                 logger.info(f"In Try")
                 img = Image.open(img_path).convert('RGB')
                 img_tensor = transform(img).unsqueeze(0).to(DEVICE)
-                logger.info(f"Pass tensor")
+                #logger.info(f"Pass tensor")
                 
                 output = model(img_tensor)
-                logger.info(f"Pass output")
+                #logger.info(f"Pass output")
                 # 2. Convertir les logits en probabilités (Softmax)
                 probs = F.softmax(output, dim=1)
                 conf, pred = torch.max(probs, 1)
-                logger.info(f"Pass pred")
+                #logger.info(f"Pass pred")
                 
-                logger.info(f"PREDICT --> [Image: {filename:25} | Resultat: {CLASSES[pred.item()]}]")
+                #logger.info(f"PREDICT --> [Image: {filename:25} | Resultat: {CLASSES[pred.item()]}]")
                 logger.info(f"  > PREDICTION : {CLASSES[pred.item()]} ({conf.item()*100:.2f}%)")
                 
                 # 5. Afficher le détail pour chaque classe
@@ -2208,7 +2316,11 @@ spec:
         args:
           - |
             ldconfig /usr/local/cuda-10.2/lib64 && \
-            python3 /mnt/code/scripts/train.py
+            python3 /mnt/code/scripts/train_resnet50.py \
+            --model_path /mnt/code/models/resnet50-0676ba61.pth \
+            --data_dir /mnt/code/images \
+            --save_path /mnt/code/glass_model_resnet50.pth \
+            --epochs 1 --batch_size 4
         securityContext:
           privileged: true
         env:
@@ -2221,7 +2333,7 @@ spec:
         resources:
           limits:
             nvidia.com/gpu: 1            
-            memory: "2Gi"
+            memory: "2500Mi"
         volumeMounts:
         - name: cuda-volume
           mountPath: /usr/local/cuda-10.2
@@ -2240,6 +2352,76 @@ spec:
       restartPolicy: Never
 
 -- fin code
+
+k logs -f job/job-claude-train -n claude-ia
+
+- job to train with mobilenet_v3_large (job-claude-train-mobilenet.yaml)
+sudo vi /k3s-ext-1/code/scripts/train_mobilenet.py # <-- ADD PYTHON CODE
+vi ~/test-gpu/job-claude-train-mobilenet.yaml # <-- Add yaml bellow
+
+-- debut code
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-claude-train-mobilenet
+  namespace: claude-ia
+spec:
+  template:
+    spec:
+      hostNetwork: true
+      containers:
+      - name: trainer
+        image: picomaster:30500/jetson-base:v1
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            ldconfig /usr/local/cuda-10.2/lib64 && \
+            python3 /mnt/code/scripts/train_mobilenet.py \
+            --model_path /mnt/code/models/mobilenet_v3_large-5c1a4163.pth \
+            --data_dir /mnt/code/images \
+            --save_path /mnt/code/glass_model_mobilenet.pth \
+            --epochs 1 --batch_size 4
+        securityContext:
+          privileged: true
+        env:
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: all
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: all,utility,compute,video,graphics
+        - name: LD_LIBRARY_PATH
+          value: "/usr/local/cuda-10.2/lib64"
+        resources:
+          limits:
+            nvidia.com/gpu: 1            
+            memory: "2500Mi"
+        volumeMounts:
+        - name: cuda-volume
+          mountPath: /usr/local/cuda-10.2
+          readOnly: true
+        - name: code-volume
+          mountPath: /mnt/code
+      volumes:
+      - name: cuda-volume
+        hostPath:
+          path: /usr/local/cuda-10.2
+          type: Directory
+      - name: code-volume
+        nfs:
+          server: picomaster
+          path: /k3s-ext-1/code
+      restartPolicy: Never
+
+-- fin code
+
+k apply -f ~/test-gpu/job-claude-train-mobilenet.yaml
+  k delete -f ~/test-gpu/job-claude-train-mobilenet.yaml
+k get pods -n claude-ia -w
+k logs -f [pod_name] -n claude-ia
+  k logs -f job/job-claude-train-mobilenet -n claude-ia
+  kubectl logs -f -l job-name=job-claude-train-mobilenet -n claude-ia
+k describe pod [pod_name] -n registry
+
+
 
 - job to predict (job-claude-predict.yaml)
 vi ~/test-gpu/job-claude-predict.yaml
@@ -2274,7 +2456,7 @@ spec:
         resources:
           limits:
             nvidia.com/gpu: 1
-            memory: "2Gi"
+            memory: "2500Mi"
         volumeMounts:
         - name: cuda-volume
           mountPath: /usr/local/cuda-10.2
@@ -2303,8 +2485,11 @@ scp -r ~/Bureau/test picomaster:~/test
 # scp -r ~/Bureau/test picomaster:/k3s-ext-1/code/test
 
 # 2. (ON MASTER) copy test & images folder to /k3s-ext-1/code/
-sudo cp -r ~/images /k3s-ext-1/code/images
-sudo cp -r ~/test /k3s-ext-1/code/test
+# sudo cp -r ~/images /k3s-ext-1/code/images
+# sudo cp -r ~/test /k3s-ext-1/code/test
+
+sudo mv ~/images /k3s-ext-1/code/images
+sudo mv ~/test /k3s-ext-1/code/test
 
 # 3. (ON MASTER) deploy namespace "claude-ia"
 k apply -f ~/test-gpu/n-claude.yaml
