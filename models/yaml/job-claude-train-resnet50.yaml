@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-claude-train-resnet50
+  namespace: claude-ia
+spec:
+  template:
+    spec:
+      hostNetwork: true
+      containers:
+      - name: trainer
+        image: picomaster:30500/jetson-base:v1
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            ldconfig /usr/local/cuda-10.2/lib64 && \
+            python3 /mnt/code/scripts/train_resnet50.py \
+            --model_path /mnt/code/models/resnet50-0676ba61.pth \
+            --data_dir /mnt/code/images \
+            --save_path /mnt/code/glass_model_resnet50.pth \
+            --epochs 1 --batch_size 4
+        securityContext:
+          privileged: true
+        env:
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: all
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: all,utility,compute,video,graphics
+        - name: LD_LIBRARY_PATH
+          value: "/usr/local/cuda-10.2/lib64"
+        resources:
+          limits:
+            nvidia.com/gpu: 1            
+            memory: "2500Mi"
+        volumeMounts:
+        - name: cuda-volume
+          mountPath: /usr/local/cuda-10.2
+          readOnly: true
+        - name: code-volume
+          mountPath: /mnt/code
+      volumes:
+      - name: cuda-volume
+        hostPath:
+          path: /usr/local/cuda-10.2
+          type: Directory
+      - name: code-volume
+        nfs:
+          server: picomaster
+          path: /k3s-ext-1/code
+      restartPolicy: Never

@@ -2064,27 +2064,35 @@ python3 /data/test2.py
 
 /k3s-ext-1/code/
 ├── images/      # (Dataset d'entraînement)
-│   ├── no-car/           # Paysages, routes vides, etc.
-│   ├── ranger-rover/     # Uniquement des Range Rover
-│   ├── toyota/           # Uniquement des Toyota
-│   └── other-car/        # Autres marques (Peugeot, BMW, etc.)
+│   ├── empty/
+│   ├── with-water/     # Uniquement des Range Rover
+│   ├── with-tea/           # Uniquement des Toyota
+│   └── with-coffee/        # Autres marques (Peugeot, BMW, etc.)
+├── models/
+│   ├── mobilenet_v3_large-5c1a4163.pth
+│   └── resnet50-0676ba61.pth
 ├── scripts/
-│   ├── train.py
-│   └── predict.py
+│   ├── train_resnet50.py
+│   └── predict_resnet50.py
 ├── test/        # <--- Mettez vos images à tester ici
 │   ├── photo1.jpg
 │   ├── photo2.png
 │   └── ...
-└── car_model.pth
+└── glass_model_resnet50.pth
 
 - create folder on master
 sudo mkdir -p /k3s-ext-1/code/scripts
 sudo mkdir -p /k3s-ext-1/code/models
 
-- add model
+- add model (download & move to folder /k3S-ext-1/code/models/)
 wget https://download.pytorch.org/models/resnet50-0676ba61.pth
 wget https://download.pytorch.org/models/mobilenet_v3_large-5c1a4163.pth
-sudo mv resnet50-0676ba61.pth mobilenet_v3_large-5c1a4163.pth /k3s-ext-1/code/models
+wget https://download.pytorch.org/models/efficientnet_v2_m-dc08266a.pth
+wget https://download.pytorch.org/models/convnext_tiny-983f1562.pth
+sudo mv resnet50-0676ba61.pth /k3s-ext-1/code/models
+sudo mv mobilenet_v3_large-5c1a4163.pth /k3s-ext-1/code/models
+sudo mv efficientnet_v2_m-dc08266a.pth /k3s-ext-1/code/models
+sudo mv convnext_tiny-983f1562.pth /k3s-ext-1/code/models
 
 - nfs accessibility
 sudo vi /etc/exports
@@ -2096,321 +2104,39 @@ sudo exportfs -ra
 showmount -e picomaster (workers)
 
 - create train.py code and save modele
-sudo vi /k3s-ext-1/code/scripts/train.py
+sudo vi /k3s-ext-1/code/scripts/train_resnet50.py
 -- debut code
-print("-- Import libs --")
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torchvision import datasets, transforms, models
-import time
-from datetime import datetime
-import logging
-import sys
-
-# Configuration du logging pour Kubernetes
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
-
-# Configuration
-print("-- Init device --")
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-LOCAL_WEIGHTS = "/mnt/code/models/resnet50-0676ba61.pth"
-EPOCHS = 3
-BATCH_SIZE = 4  # Reduit pour eviter OOM sur Jetson avec ResNet50
-DATA_DIR = '/mnt/code/images'
-SAVE_PATH = '/mnt/code/glass_model_resnet50.pth'
-
-# 1. Pretraitement
-#print("-- Pretraitement --")
-logger.info(f"-- Pretraitement --")
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.RandomHorizontalFlip(), # Augmentation de donnees
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-])
-
-# 2. Chargement des donnees
-logger.info("-- Chargement des donnees --")
-dataset = datasets.ImageFolder(root=DATA_DIR, transform=transform)
-train_loader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
-logger.info(f"Classes detectees : {dataset.class_to_idx}")
-num_classes = len(dataset.classes)
-logger.info(f"Nombre de classes : {num_classes}")
-# Nombre total d'images
-total_images = len(dataset)
-logger.info(f"Nombre total d'images : {total_images}")
-
-# 3. Modele ResNet50
-logger.info("-- Chargement Modele ResNet50 --")
-model = models.resnet50(pretrained=False)
-model.load_state_dict(torch.load(LOCAL_WEIGHTS))
-# Modifier la dernière couche pour les classes
-model.fc = nn.Linear(model.fc.in_features, num_classes)
-model = model.to(DEVICE)
-
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
-
-# 4. Boucle d'entrainement
-logger.info("-- Debut Boucle d'entrainement --")
-logger.info(f"Debut de l'entrainement sur {DEVICE}...")
-model.train()
-
-for epoch in range(EPOCHS):
-    running_loss = 0.0
-    start_time = time.time()
-    start_readable = datetime.fromtimestamp(start_time).strftime('%H:%M:%S')
-    logger.info(f"Start time {start_time} - epoch {epoch}...")
-    i = 1
-    
-    for images, labels in train_loader:
-        images, labels = images.to(DEVICE), labels.to(DEVICE)
-        if i % 10 == 0:
-            logger.info(f"loading image {i*BATCH_SIZE}, Total images: {total_images}, start_time {start_readable} - epoch {epoch}...")
-        i=i+1
-        
-        optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        
-        running_loss += loss.item()
-
-    epoch_loss = running_loss / len(train_loader)
-    duration = time.time() - start_time
-    logger.info(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {epoch_loss:.4f} - Temps: {duration:.2f}s")
-
-# 5. Sauvegarde
-logger.info(f"-- Sauvegarde {SAVE_PATH} --")
-torch.save(model.state_dict(), SAVE_PATH)
-logger.info(f"Modele sauvegarde dans {SAVE_PATH}")
-
+./models/train/train_resnet50.py
 -- fin code
 
 - create predict.py code and predict in command line (provide image path)
-sudo vi /k3s-ext-1/code/scripts/predict.py
+sudo vi /k3s-ext-1/code/scripts/predict_resnet50.py
 -- debut code
-print(f"-- import libs --")
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torchvision import models, transforms
-from PIL import Image
-import os
-import sys
-import logging
-
-# Configuration du logging pour Kubernetes
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
-
-logger.info(f"-- Init Device --")
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MODEL_PATH = "/mnt/code/glass_model_resnet50.pth"
-# L'ordre doit correspondre à l'ordre alphabetique des dossiers
-# {'empty': 0, 'plastic': 1, 'with-beer': 2, 'with-coffee': 3, 'with-juice': 4, 'with-milk': 5, 'with-tea': 6, 'with-water': 7, 'with-wine': 8}
-CLASSES = ['empty', 'plastic', 'with-beer', 'with-coffee', 'with-juice', 'with-milk', 'with-tea', 'with-water', 'with-wine']
-
-def predict_folder(folder_path):
-    # 1. Configuration du modele
-    logger.info(f"-- 1. Configuration du modele --")
-    model = models.resnet50()
-    model.fc = nn.Linear(model.fc.in_features, len(CLASSES))
-    if not os.path.exists(MODEL_PATH):
-        logger.info(f"Erreur : Modèle non trouve ici {MODEL_PATH}")
-        return
-    
-    model.load_state_dict(torch.load(MODEL_PATH))
-    model = model.to(DEVICE).eval()
-
-    # 2. Transformations
-    logger.info(f"-- 2. Transformations --")
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
-
-    # 3. Boucle sur les images
-    logger.info(f"Analyse des images dans : {folder_path}")
-    valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp')
-    
-    files = [f for f in os.listdir(folder_path) if f.lower().endswith(valid_extensions)]
-    
-    if not files:
-        logger.info("Aucune image trouvee dans le dossier.")
-        return
-
-    with torch.no_grad():
-    	logger.info(f"Boucle prediction des images dans : {folder_path}")
-        for filename in files:
-            img_path = os.path.join(folder_path, filename)
-            logger.info(f"image : {filename}")
-            try:
-                logger.info(f"In Try")
-                img = Image.open(img_path).convert('RGB')
-                img_tensor = transform(img).unsqueeze(0).to(DEVICE)
-                #logger.info(f"Pass tensor")
-                
-                output = model(img_tensor)
-                #logger.info(f"Pass output")
-                # 2. Convertir les logits en probabilités (Softmax)
-                probs = F.softmax(output, dim=1)
-                conf, pred = torch.max(probs, 1)
-                #logger.info(f"Pass pred")
-                
-                #logger.info(f"PREDICT --> [Image: {filename:25} | Resultat: {CLASSES[pred.item()]}]")
-                logger.info(f"  > PREDICTION : {CLASSES[pred.item()]} ({conf.item()*100:.2f}%)")
-                
-                # 5. Afficher le détail pour chaque classe
-                for i, class_name in enumerate(CLASSES):
-                    p = probs[0][i].item() * 100
-                    logger.info(f"    - {class_name:12}: {p:.2f}%")
-            except Exception as e:
-                logger.info(f"Erreur sur {filename}: {e}")
-
-if __name__ == "__main__":
-    # Dossier par defaut si aucun argument n'est passee
-    target_folder = sys.argv[1] if len(sys.argv) > 1 else "/mnt/code/test"
-    predict_folder(target_folder)
-
+./models/predict/predict_resnet50.py
 -- fin code
 
 - namespace first (claude-ia)
 vi ~/test-gpu/n-claude.yaml
 -- debut code
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: claude-ia
+./models/yaml/n-claude.yaml
 -- fin code
+k apply -f ~/test-gpu/n-claude.yaml
 
-- job for training (job-claude-train.yaml)
-vi ~/test-gpu/job-claude-train.yaml
+- job for training (job-claude-train-resnet50.yaml)
+vi ~/test-gpu/job-claude-train-resnet50.yaml
 
 -- debut code
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: job-claude-train
-  namespace: claude-ia
-spec:
-  template:
-    spec:
-      hostNetwork: true
-      containers:
-      - name: trainer
-        image: picomaster:30500/jetson-base:v1
-        command: ["/bin/bash", "-c"]
-        args:
-          - |
-            ldconfig /usr/local/cuda-10.2/lib64 && \
-            python3 /mnt/code/scripts/train_resnet50.py \
-            --model_path /mnt/code/models/resnet50-0676ba61.pth \
-            --data_dir /mnt/code/images \
-            --save_path /mnt/code/glass_model_resnet50.pth \
-            --epochs 1 --batch_size 4
-        securityContext:
-          privileged: true
-        env:
-        - name: NVIDIA_VISIBLE_DEVICES
-          value: all
-        - name: NVIDIA_DRIVER_CAPABILITIES
-          value: all,utility,compute,video,graphics
-        - name: LD_LIBRARY_PATH
-          value: "/usr/local/cuda-10.2/lib64"
-        resources:
-          limits:
-            nvidia.com/gpu: 1            
-            memory: "2500Mi"
-        volumeMounts:
-        - name: cuda-volume
-          mountPath: /usr/local/cuda-10.2
-          readOnly: true
-        - name: code-volume
-          mountPath: /mnt/code
-      volumes:
-      - name: cuda-volume
-        hostPath:
-          path: /usr/local/cuda-10.2
-          type: Directory
-      - name: code-volume
-        nfs:
-          server: picomaster
-          path: /k3s-ext-1/code
-      restartPolicy: Never
-
+./models/yaml/job-claude-train-resnet50.yaml
 -- fin code
 
-k logs -f job/job-claude-train -n claude-ia
+k logs -f job/job-claude-train-resnet50 -n claude-ia
 
 - job to train with mobilenet_v3_large (job-claude-train-mobilenet.yaml)
-sudo vi /k3s-ext-1/code/scripts/train_mobilenet.py # <-- ADD PYTHON CODE
+sudo vi /k3s-ext-1/code/scripts/train_mobilenet.py # <-- ADD PYTHON CODE (./models/train/train_mobilenet.py)
 vi ~/test-gpu/job-claude-train-mobilenet.yaml # <-- Add yaml bellow
 
 -- debut code
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: job-claude-train-mobilenet
-  namespace: claude-ia
-spec:
-  template:
-    spec:
-      hostNetwork: true
-      containers:
-      - name: trainer
-        image: picomaster:30500/jetson-base:v1
-        command: ["/bin/bash", "-c"]
-        args:
-          - |
-            ldconfig /usr/local/cuda-10.2/lib64 && \
-            python3 /mnt/code/scripts/train_mobilenet.py \
-            --model_path /mnt/code/models/mobilenet_v3_large-5c1a4163.pth \
-            --data_dir /mnt/code/images \
-            --save_path /mnt/code/glass_model_mobilenet.pth \
-            --epochs 1 --batch_size 4
-        securityContext:
-          privileged: true
-        env:
-        - name: NVIDIA_VISIBLE_DEVICES
-          value: all
-        - name: NVIDIA_DRIVER_CAPABILITIES
-          value: all,utility,compute,video,graphics
-        - name: LD_LIBRARY_PATH
-          value: "/usr/local/cuda-10.2/lib64"
-        resources:
-          limits:
-            nvidia.com/gpu: 1            
-            memory: "2500Mi"
-        volumeMounts:
-        - name: cuda-volume
-          mountPath: /usr/local/cuda-10.2
-          readOnly: true
-        - name: code-volume
-          mountPath: /mnt/code
-      volumes:
-      - name: cuda-volume
-        hostPath:
-          path: /usr/local/cuda-10.2
-          type: Directory
-      - name: code-volume
-        nfs:
-          server: picomaster
-          path: /k3s-ext-1/code
-      restartPolicy: Never
-
+./models/yaml/job-claude-train-mobilenet.yaml
 -- fin code
 
 k apply -f ~/test-gpu/job-claude-train-mobilenet.yaml
@@ -2422,58 +2148,11 @@ k logs -f [pod_name] -n claude-ia
 k describe pod [pod_name] -n registry
 
 
-
-- job to predict (job-claude-predict.yaml)
-vi ~/test-gpu/job-claude-predict.yaml
+- job to predict (job-claude-predict-resnet50.yaml)
+vi ~/test-gpu/job-claude-predict-resnet50.yaml
 
 -- debut code
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: job-claude-predict
-  namespace: claude-ia
-spec:
-  template:
-    spec:
-      hostNetwork: true
-      containers:
-      - name: predictor
-        image: picomaster:30500/jetson-base:v1
-        command: ["/bin/bash", "-c"]
-        args:
-          - |
-            ldconfig /usr/local/cuda-10.2/lib64 && \
-            python3 /mnt/code/scripts/predict.py /mnt/code/test
-        securityContext:
-          privileged: true
-        env:
-        - name: NVIDIA_VISIBLE_DEVICES
-          value: all
-        - name: NVIDIA_DRIVER_CAPABILITIES
-          value: all,utility,compute,video,graphics
-        - name: LD_LIBRARY_PATH
-          value: "/usr/local/cuda-10.2/lib64"
-        resources:
-          limits:
-            nvidia.com/gpu: 1
-            memory: "2500Mi"
-        volumeMounts:
-        - name: cuda-volume
-          mountPath: /usr/local/cuda-10.2
-          readOnly: true
-        - name: code-volume
-          mountPath: /mnt/code
-      volumes:
-      - name: cuda-volume
-        hostPath:
-          path: /usr/local/cuda-10.2
-          type: Directory
-      - name: code-volume
-        nfs:
-          server: picomaster
-          path: /k3s-ext-1/code
-      restartPolicy: Never
-
+./models/yaml/job-claude-predict-resnet50.yaml
 -- fin code
 
 - DEPLOYEMENT
@@ -2481,12 +2160,7 @@ spec:
 scp -r ~/Bureau/images picomaster:~/images
 scp -r ~/Bureau/test picomaster:~/test
 
-# scp -r ~/Bureau/images picomaster:/k3s-ext-1/code/images
-# scp -r ~/Bureau/test picomaster:/k3s-ext-1/code/test
-
 # 2. (ON MASTER) copy test & images folder to /k3s-ext-1/code/
-# sudo cp -r ~/images /k3s-ext-1/code/images
-# sudo cp -r ~/test /k3s-ext-1/code/test
 
 sudo mv ~/images /k3s-ext-1/code/images
 sudo mv ~/test /k3s-ext-1/code/test
@@ -2494,39 +2168,33 @@ sudo mv ~/test /k3s-ext-1/code/test
 # 3. (ON MASTER) deploy namespace "claude-ia"
 k apply -f ~/test-gpu/n-claude.yaml
 k get ns
-k get pods -n claude-ia
 
 # 4. (ON MASTER) deploy train job
-k apply -f ~/test-gpu/job-claude-train.yaml
-	kubectl delete job job-claude-train -n claude-ia --force --grace-period=0
+k apply -f ~/test-gpu/job-claude-train-resnet50.yaml
+	kubectl delete job job-claude-train-resnet50 -n claude-ia --force --grace-period=0
 
 k get pods -n claude-ia
 
-kubectl get pods -l job-name=job-claude-predict -n claude-ia
-	kubectl get pods -l job-name=job-claude-predict  -n claude-ia -o wide
-	kubectl get jobs job-claude-predict -n claude-ia -w
-kubectl logs -l job-name=job-claude-predict  -n claude-ia
-
-kubectl logs job-claude-predict-p5v8q
-	kubectl describe pod job-claude-predict-p5v8q
-kubectl logs job-claude-predict-6n946
-	kubectl describe pod job-claude-predict-6n946
+kubectl get pods -l job-name=job-claude-predict-resnet50 -n claude-ia
+	kubectl get pods -l job-name=job-claude-predict-resnet50  -n claude-ia -o wide
+	kubectl get jobs job-claude-predict-resnet50 -n claude-ia -w
+kubectl logs -l job-name=job-claude-predict-resnet50  -n claude-ia
 
 # 5. (ON MASTER) deploy predict job [!!!! WAIT UNTIL TRAIN IS FINISH]
-k apply -f ~/test-gpu/job-claude-predict.yaml
+k apply -f ~/test-gpu/job-claude-predict-resnet50.yaml
 
 # X. Tricky
 sudo find /k3s-ext-1/code/images -name ".*" -delete
 sudo find /k3s-ext-1/code/images -name ".DS_Store" -delete
-sudo rm -rf /k3s-ext-1/code/scripts/train.py
-sudo rm -rf /k3s-ext-1/code/scripts/predict.py
-echo "" > ~/test-gpu/job-claude-predict.yaml
-echo "" > ~/test-gpu/job-claude-train.yaml
+sudo rm -rf /k3s-ext-1/code/scripts/train_resnet50.py
+sudo rm -rf /k3s-ext-1/code/scripts/predict_resnet50.py
+echo "" > ~/test-gpu/job-claude-predict-resnet50.yaml
+echo "" > ~/test-gpu/job-claude-train-resnet50.yaml
 
 
 # X. delete all
-k delete -f ~/test-gpu/job-claude-predict.yaml
-k apply -f ~/test-gpu/job-claude-train.yaml
+k delete -f ~/test-gpu/job-claude-predict-resnet50.yaml
+k apply -f ~/test-gpu/job-claude-train-resnet50.yaml
 k apply -f ~/test-gpu/n-claude.yaml
 
 

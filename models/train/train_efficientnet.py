@@ -1,7 +1,7 @@
 # script edit:
-# sudo vi /k3s-ext-1/code/scripts/train_resnet50.py
+# sudo vi /k3s-ext-1/code/scripts/train_efficientnet.py
 # Run this script with :
-# python3 /mnt/code/scripts/train_resnet50.py --model_path /mnt/code/models/resnet50-0676ba61.pth --data_dir /mnt/code/images --save_path /mnt/code/glass_model_resnet50.pth --epochs 3 --batch_size 4
+# python3 /mnt/code/scripts/train_efficientnet.py --model_path /mnt/code/models/efficientnet_v2_m-dc08266a.pth --data_dir /mnt/code/images --save_path /mnt/code/glass_model_efficientnet.pth --epochs 3 --batch_size 2
 
 print("-- Import libs --")
 import torch
@@ -25,12 +25,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def main():
-    parser = argparse.ArgumentParser(description="Script pour traiter un fichier spécifique.")
-    parser.add_argument("--model_path", type=str, default="/mnt/code/models/resnet50-0676ba61.pth", help="Model weights path.")
+    parser = argparse.ArgumentParser(description="Script pour traiter un fichier specifique.")
+    parser.add_argument("--model_path", type=str, default="/mnt/code/models/efficientnet_v2_m-dc08266a.pth", help="Model weights path.")
     parser.add_argument("--data_dir", type=str, default="/mnt/code/images", help="Directory containing the images.")
-    parser.add_argument("--save_path", type=str, default="/mnt/code/glass_model_resnet50.pth", help="Path to save the trained model.")
+    parser.add_argument("--save_path", type=str, default="/mnt/code/glass_model_efficientnet.pth", help="Path to save the trained model.")
     parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs.")
-    parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training.")
+    parser.add_argument("--batch_size", type=int, default=2, help="Batch size for training.")
     args = parser.parse_args()
         
     if os.path.exists(args.model_path):
@@ -50,14 +50,14 @@ def main():
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     LOCAL_WEIGHTS = args.model_path
     EPOCHS = args.epochs
-    BATCH_SIZE = args.batch_size  # Reduit pour eviter OOM sur Jetson avec ResNet50
+    BATCH_SIZE = args.batch_size  # Reduit pour eviter OOM sur Jetson
     DATA_DIR = args.data_dir
     SAVE_PATH = args.save_path
     
     logger.info(f"------ Batch Size {BATCH_SIZE}")
     logger.info(f"------ Epochs found at {EPOCHS}")
     logger.info(f"------ Model weights {LOCAL_WEIGHTS}")
-    logger.info(f"------ Data iamges directory {DATA_DIR}")
+    logger.info(f"------ Data images directory {DATA_DIR}")
     logger.info(f"------ Save path {SAVE_PATH}")
 
     # 1. Pretraitement
@@ -80,12 +80,16 @@ def main():
     total_images = len(dataset)
     logger.info(f"Nombre total d'images : {total_images}")
     
-    # 3. Modele ResNet50
-    logger.info("-- Chargement Modele ResNet50 --")
-    model = models.resnet50(pretrained=False)
-    model.load_state_dict(torch.load(LOCAL_WEIGHTS))
-    # Modifier la dernière couche pour les classes
-    model.fc = nn.Linear(model.fc.in_features, num_classes)
+    # 3. Modele EfficientNet V2 M
+    logger.info("-- Chargement Modele EfficientNet_V2_M --")
+    model = models.efficientnet_v2_m(weights=None)
+    model.load_state_dict(torch.load(LOCAL_WEIGHTS, map_location=DEVICE))
+    
+    # Modifier la derniere couche (classifier pour EfficientNet)
+    # model.classifier est un Sequential, on remplace le dernier element Linear
+    in_features = model.classifier[1].in_features
+    model.classifier[1] = nn.Linear(in_features, num_classes)
+    
     model = model.to(DEVICE)
     
     criterion = nn.CrossEntropyLoss()
@@ -128,5 +132,4 @@ def main():
     logger.info(f"Modele sauvegarde dans {SAVE_PATH}")
 
 if __name__ == "__main__":
-            
     main()
