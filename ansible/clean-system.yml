@@ -1,0 +1,32 @@
+- name: Nettoyage complet des noeuds Jetson
+  hosts: cluster
+  become: yes
+  tasks:
+    - name: "Nettoyage Apt (autoremove et autoclean)"
+      apt:
+        autoremove: yes
+        autoclean: yes
+        update_cache: yes
+
+    - name: "Suppression du cache NVIDIA"
+      file:
+        path: "/home/{{ ansible_user }}/.nv/"
+        state: absent
+
+    - name: "Nettoyage Docker system prune"
+      shell: "docker system prune -a -f"
+      args:
+        warn: false
+
+    - name: "Liberation de la RAM (drop_caches)"
+      shell: "sync && echo 3 > /proc/sys/vm/drop_caches"
+      args:
+        warn: false
+
+    - name: "Verification de l'espace disque final"
+      command: "df -h /"
+      register: disk_space
+
+    - name: "Affichage de l'espace restant"
+      debug:
+        msg: "{{ disk_space.stdout_lines[1] }}"

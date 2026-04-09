@@ -1,0 +1,28 @@
+== build from scratch (to use picomaster)
+
+== create folder
+mkdir ~/test_scratch
+
+== Interactive yaml test (picomaster)
+vi ~/test_scratch/jetson-gpu-interactive-scratch.yaml
+-- debut code
+./jetson-gpu-interactive-scratch.yaml
+-- fin code
+
+== apply, checks
+k apply -f ~/test_scratch/jetson-gpu-interactive-scratch.yaml
+    k delete -f ~/test_scratch/jetson-gpu-interactive-scratch.yaml
+k get pods -w
+k describe pod jetson-gpu-interactive-scratch
+k logs jetson-gpu-interactive-scratch
+
+== Test inside pods
+k exec -it jetson-gpu-interactive-scratch -- /bin/bash
+
+# .cuda() : Vérifie que votre conteneur a bien accès au GPU du Jetson (via le runtime NVIDIA).
+# .device : Confirme que les poids du modèle résident en mémoire vidéo (VRAM).
+python3 -c "import torch; import torchvision.models as models; m = models.resnet50(pretrained=False); print('ResNet50 loaded')"
+python3 -c "import torch; import timm; m = timm.create_model('convnext_tiny', pretrained=False).cuda(); print(f'ConvNeXt Tiny loaded on : {next(m.parameters()).device}')"
+python3 -c "import torch; import timm; m = timm.create_model('efficientnetv2_m', pretrained=False).cuda(); print(f'EfficientNetV2-M loaded on : {next(m.parameters()).device}')"
+
+

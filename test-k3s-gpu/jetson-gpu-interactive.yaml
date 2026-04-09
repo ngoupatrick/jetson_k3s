@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: jetson-gpu-interactive
+spec:
+  hostNetwork: true
+  containers:
+  - name: ai-container
+    image: nvcr.io/nvidia/l4t-ml:r32.7.1-py3
+    #command: ["sleep", "infinity"]
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        # 1. Configuration des dépôts NVIDIA CUDA
+        apt-get update && apt-get install -y software-properties-common wget
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/arm64/cuda-ubuntu1804.pin
+        mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
+        apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/arm64/7fa2af80.pub
+        add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/arm64/ /"
+        
+        # 2. Installation de cuDNN 8
+        apt-get update
+        apt-get install -y libcudnn8 libcudnn8-dev
+        
+        # 3. Mise à jour du cache LD pour inclure le dossier CUDA monté
+        ldconfig /usr/local/cuda-10.2/lib64
+        echo "**Configuration terminée et Cache LD mis à jour.**"
+        
+        # 4. Maintien du Pod en vie
+        sleep infinity
+    securityContext:
+      privileged: true
+    env:
+    - name: NVIDIA_VISIBLE_DEVICES
+      value: all
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: all,utility,compute,video,graphics
+    - name: LD_LIBRARY_PATH
+      value: "/usr/local/cuda-10.2/lib64"
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+    volumeMounts:
+    - name: cuda-volume
+      mountPath: /usr/local/cuda-10.2
+      readOnly: true
+  volumes:
+  - name: cuda-volume
+    hostPath:
+      path: /usr/local/cuda-10.2
+      type: Directory
+  restartPolicy: Never

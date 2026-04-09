@@ -5,19 +5,69 @@
 	- cuDNN 8.2
 	- VPI (Vision Programming Interface) 1.2
 	- OpenCV 4.1.1
-- utiliser des images basées sur L4T
-- Image : nvcr.io/nvidia/l4t-base:r32.7.1
+  - Vulkan 1.2
+  - Nsight (Systems 2021.5, Graphics 2021.2, Compute 2019.3)
 - cuda repos:
-	https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/arm64/
+  v1:
+	  https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/arm64/
+  v2:
+    choose: Jetpack 4.6.x,t210 & common
+    https://repo.download.nvidia.com/jetson/
 - k3S v1.24.17+k3s1 :
 	https://docs.k3s.io/release-notes-old/v1.24.X
 	https://blog.alphabravo.io/part-3-k3s-zero-to-hero-mastering-k3s-configuration-from-yaml-to-cli/
+- utiliser des images basées sur L4T
+  github: https://github.com/dusty-nv/jetson-containers?tab=readme-ov-file
+  CUDA containers: ML, LLM, VLM, VIT, ...
+- download wheel for torch:
+  https://forums.developer.nvidia.com/t/pytorch-for-jetson/72048
+- Image : 
+  container (base):
+    nvcr.io/nvidia/l4t-base:r32.7.1
+    nvcr.io/nvidia/l4t-ml:r32.7.1-py3
+      manifest: sha256:238be76a09a10904b6b9d3cfca5cd2b34c369a3c3c99340050f825998f552a5b
+      OS/Arch: arm64
+      Compressed size: 1.71 GB
+      Created: 03/11/2022
+    build from scratch:
+      steps:
+        mkdir ~/test_scratch/
+        vi ~/test_scratch/Dockerfile
+        -- debut code
+        ./base-build/Dockerfile
+        -- fin code
+
+        sudo docker build -t picomaster:30500/jetson-base:light ~/test_scratch/
+        docker push picomaster:30500/jetson-base:light
+        docker rmi picomaster:30500/jetson-base:light
+    nvcr.io/nvidia/l4t-ml:r32.7.1-py3:     
+      specs:
+        https://catalog.ngc.nvidia.com/orgs/nvidia/containers/l4t-ml?version=r32.7.1-py3
+      jetpack compatibility:
+        JetPack 4.6.x (L4T R32.7.1)
+      contains:
+        TensorFlow 1.15.5
+        PyTorch v1.10.0
+        torchvision v0.11.0
+        torchaudio v0.10.0
+        onnx 1.11.0
+        CuPy 9.2.0
+        numpy 1.19.5
+        numba 0.53.1
+        OpenCV 4.5.0 (with CUDA)
+        pandas 1.1.5
+        scipy 1.5.4
+        scikit-learn 0.24.2
+        JupyterLab 2.2.9
+          unless run command overrides the default
+          0.0.0.0:8888
 - models & download
 	https://docs.pytorch.org/vision/stable/index.html
 	https://docs.pytorch.org/vision/stable/models.html
 		https://docs.pytorch.org/vision/stable/models.html#classification # <-- choose a model and go to [SOURCE], you will see the link
 - some commands:
-	watch -n 5 free -h <-- watch RAM every 5s
+	watch -n 5 free -h #<-- watch RAM every 5s
+  docker save origin_base:latest | ssh w2 "docker load" # <- push image on some node
 
 ================== INSTALL (SD CARD)
 urls download:
@@ -26,13 +76,27 @@ urls download:
 	jetpack 4.6.6
 		https://developer.nvidia.com/embedded/jetpack-sdk-46
 		https://developer.nvidia.com/embedded/l4t/r32_release_v6.1/jeston_nano/jetson-nano-jp46-sd-card-image.zip
+      https://developer.nvidia.com/embedded/downloads#?search=sd%20card
+        (BEST for l4t-*:r32.7.1-*): https://developer.nvidia.com/embedded/l4t/r32_release_v7.1/jp_4.6.1_b110_sd_card/jeston_nano/jetson-nano-jp461-sd-card-image.zip
+          md5sum: 762653fb8798924d3b015acddcd03a53 
 
-boot sd card
+steps:
+  - remove sd card from each jetson nano
+  - download balenaEtcher, unzip & run
+    https://github.com/balena-io/etcher/releases/download/v2.1.4/balenaEtcher-linux-x64-2.1.4.zip
+  - download jetpack 4.6.6
+    https://developer.nvidia.com/embedded/l4t/r32_release_v7.1/jp_4.6.1_b110_sd_card/jeston_nano/jetson-nano-jp461-sd-card-image.zip
+  - plug sd card on your computer
+  - use balenaEtcher to write jetson-nano-jp461-sd-card-image.zip on sd card
+  - plug now your sd card on jetson nano pc
+  - boot
+  - set:
+    TZ: Africa/Casablanca
+    user: picocluster
+    pass: picocluster
+    hostname: picomaster, picoworker1, picoworker2, picoworker3, picoworker4    
 
-cgroup2 unknow nsdelegate
-
-======== CARACTERISTIQUES
-
+======== SOME VERSIONS
 python 3.6
 
 picocluster@picomaster:~$ lsb_release -a
@@ -45,7 +109,6 @@ Codename:       bionic
 
 picocluster@picomaster:~$ cat /etc/nv_tegra_release
 # R32 (release), REVISION: 6.1, GCID: 27863751, BOARD: t210ref, EABI: aarch64, DATE: Mon Jul 26 19:20:30 UTC 2021
-
 
 ================= STATIC NETWORK (ONLY ON MASTER)
 
@@ -73,7 +136,7 @@ sudo nmcli connection modify "Wired connection 1" ipv4.method manual
 # Appliquer les changements
 sudo nmcli connection up "Wired connection 1"
 
-================= STATIC NETWORK (!!!!!ONLY ON DIT & ONLY ON MASTER)
+================= (!!!!) NEW DEPLOYEMENT IN DIT - STATIC NETWORK (ONLY ON MASTER)
 
 sudo nmcli connection modify "Wired connection 1" -ipv4.addresses 192.168.1.100/24
 sudo nmcli connection modify "Wired connection 1" +ipv4.addresses [FIXED_IP_DIT]/24 ipv4.gateway [FIXED_GATEWAY_DIT]
@@ -126,13 +189,13 @@ sudo nmcli connection up "Wired connection 1"
 
 ** all hosts
 sudo vi /etc/hosts
-
+-- debut code
 10.1.10.1 picomaster master
 10.1.10.11 picoworker1 w1
 10.1.10.12 picoworker2 w2
 10.1.10.13 picoworker3 w3
 10.1.10.14 picoworker4 w4
-
+-- fin code
 
 ** picomaster
 ssh-keygen -t ed25519
@@ -142,6 +205,7 @@ ssh-copy-id picocluster@picoworker3
 ssh-copy-id picocluster@picoworker4
 
 vi ~/.ssh/config
+-- debut code
 Host w1
     HostName picoworker1
     User picocluster
@@ -157,18 +221,19 @@ Host w3
 Host w4
     HostName picoworker4
     User picocluster
+-- fin code
 
-## connect
+## test connect
 ssh w1
-
-## change /etc/hosts on workers
+ssh w1 "uptime" # no root acces
+ssh -t w1 "sudo apt update" # root acces
 
 ## update /etc/resolv.conf (on every nodes)
 sudo rm /etc/resolv.conf
 sudo ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
 sudo systemctl restart systemd-resolved
 
-================== AUTO NETWORK (ROLLBACK NETWORK)
+================== (!!! NOT APPLY) AUTO NETWORK (ROLLBACK NETWORK)
 
 # Repasser la méthode IPv4 en automatique (DHCP)
 sudo nmcli connection modify "Wired connection 1" ipv4.method auto
@@ -184,27 +249,20 @@ sudo nmcli connection up "Wired connection 1"
 
 # Pour passer en mode console au démarrage
 sudo systemctl set-default multi-user.target
-
-# Pour revenir à l'interface graphique plus tard si besoin
-sudo systemctl set-default graphical.target
+  # Pour revenir à l'interface graphique plus tard si besoin
+  sudo systemctl set-default graphical.target
 
 ** picoworker (mode console, not ui) --> FROM PICOMASTER
-
-## ssh w1 "uptime" # no root acces
-## ssh -t w1 "sudo apt update" # root acces
 
 ssh -t w1 "sudo systemctl set-default multi-user.target && sudo reboot"
 ssh -t w2 "sudo systemctl set-default multi-user.target && sudo reboot"
 ssh -t w3 "sudo systemctl set-default multi-user.target && sudo reboot"
 ssh -t w4 "sudo systemctl set-default multi-user.target && sudo reboot"
 
-
 ====================== UPDATE & UPGRADE
 
 ** picomaster
-sudo apt update
-sudo apt upgrade
-sudo reboot
+sudo apt update && sudo apt upgrade -y && sudo reboot
 
 ** picoworkers --> FROM PICOMASTER
 ssh -t w1 "sudo apt update && sudo apt upgrade -y && sudo reboot"
@@ -213,8 +271,10 @@ ssh -t w3 "sudo apt update && sudo apt upgrade -y && sudo reboot"
 ssh -t w4 "sudo apt update && sudo apt upgrade -y && sudo reboot"
 
 ======================= INSTALL UTILS (curl, jq, libfreeimage-dev)
+** picomaster
 sudo apt install -y curl jq libfreeimage-dev
 
+** picoworkers --> FROM PICOMASTER
 ssh -t w1 "sudo apt install -y curl jq libfreeimage-dev"
 ssh -t w2 "sudo apt install -y curl jq libfreeimage-dev"
 ssh -t w3 "sudo apt install -y curl jq libfreeimage-dev"
@@ -232,40 +292,7 @@ ansible --version
 mkdir -p ~/my_ansible/playbook
 vi ~/my_ansible/hosts.ini
 -- debut code
-# --- Groupe de serveurs principaux ---
-# config from .ssh/config
-# USAGE:
-
-# ansible cluster -i ~/my_ansible/hosts.ini -m ping # [Pour tester la connexion de tout le groupe]
-# 	ansible cluster -m ping
-
-# ansible slaves -i ~/my_ansible/hosts.ini -m apt -a "update_cache=yes" --become -K
-# 	ansible slaves -m apt -a "update_cache=yes"
-# ansible master -i ~/my_ansible/hosts.ini -m apt -a "update_cache=yes" --become -K
-
-
-# Groupe pour le serveur maître
-[master]
-picomaster  ansible_connection=local   # Serveur maître (Master)
-
-# Groupe pour les serveurs esclaves
-[slaves]
-w1  # Premier nœud esclave
-w2
-w3
-w4
-
-# Optionnel : Un groupe qui rassemble tout le monde
-[cluster:children]
-master  # groupe [master]
-slaves  # groupe [slaves]
-
-[master:vars]
-ansible_user=picocluster
-
-[slaves:vars]
-ansible_user=picocluster 
-ansible_ssh_private_key_file=~/.ssh/id_ed25519
+./ansible/hosts.ini
 -- fin code
 
 - create default settings
@@ -273,25 +300,7 @@ ansible_ssh_private_key_file=~/.ssh/id_ed25519
 
 vi ~/ansible.cfg
 -- debut code
-[defaults]
-# Indique à Ansible quel inventaire utiliser par défaut
-inventory = ~/my_ansible/hosts.ini
-
-# Évite de taper manuellement le mot de passe sudo à chaque fois (optionnel)
-# Si vous préférez la sécurité, laissez à False et utilisez -K
-ask_become_pass = True
-
-# utilisateur cible utilisé quand vous activez le mode "become" (sudo).
-sudo_user = root
-
-# Désactive la vérification stricte des clés SSH (utile en labo)
-host_key_checking = False
-
-# Nombre de connexions simultanées
-forks = 5
-
-# Utilise Python 3 par défaut sur les nœuds distants (Ubuntu 18.04)
-interpreter_python = /usr/bin/python3
+./ansible/ansible.cfg
 -- fin code
 
 - Test:
@@ -303,43 +312,26 @@ ansible slaves -m ping
 vi ~/my_ansible/playbook/update.yml
 
 -- debut code
-- hosts: cluster
-  become: yes
-  tasks:
-    - name: Mettre à jour le cache apt
-      apt:
-        update_cache: yes
+./ansible/update.yaml
 -- fin code
 
 ansible-playbook -i ~/my_ansible/hosts.ini ~/my_ansible/playbook/update.yml -K
-	ansible-playbook ~/my_ansible/playbook/update.yml
+	ansible-playbook ~/my_ansible/playbook/update.yml -K
 
 - playbook for hostname (hostname -f)
 vi ~/my_ansible/playbook/hostname.yml
 
 -- debut code
-- name: Récupérer le hostname de tous les nœuds
-  hosts: cluster
-  tasks:
-    - name: Exécuter hostname -f
-      command: hostname -f
-      register: result_hostname
-
-    - name: Afficher le résultat
-      debug:
-        msg: "Le nom d'hôte de {{ inventory_hostname }} est {{ result_hostname.stdout }}"
+./ansible/hostname.yaml
 -- fin code
 
 ansible-playbook -i ~/my_ansible/hosts.ini ~/my_ansible/playbook/hostname.yml
 	ansible-playbook ~/my_ansible/playbook/hostname.yml
 
-
-
 ======================= STATS RESOURCES
 
 ** picomaster
-sudo apt install python3-pip
-sudo pip3 install -U jetson-stats
+sudo apt install python3-pip -y && sudo pip3 install --no-cache-dir -U jetson-stats
 
 tegrastats
 jtop (XXX)
@@ -486,14 +478,11 @@ sudo cp /etc/nvidia-container-runtime/config.toml /etc/nvidia-container-runtime/
 sudo nvidia-ctk config --set nvidia-container-cli.no-cgroups --in-place
 	sudo less /etc/nvidia-container-runtime/config.toml
 
-
-
 ## install if not (!!!!)
 sudo apt update
 sudo apt install nvidia-container-csv-cuda nvidia-container-toolkit nvidia-container-runtime
 # Puis redémarrez Docker
 sudo systemctl restart docker
-
 
 ## docker check config
 cat /etc/docker/daemon.json
@@ -536,10 +525,8 @@ docker run --rm --runtime nvidia nvcr.io/nvidia/l4t-base:r32.7.1 uname -a
 # output
 Linux ca8f75054da5 4.9.253-tegra #1 SMP PREEMPT Mon Jul 26 12:13:06 PDT 2021 aarch64 aarch64 aarch64 GNU/Linux
 
-
 # delete image
 docker rmi nvcr.io/nvidia/l4t-base:r32.7.1
-
 
 =============================== KUBERNETES (K3S)
 
@@ -558,7 +545,7 @@ sudo vi /etc/docker/daemon.json
 
 sudo systemctl restart docker
 
-### 2- install k3s
+### 2- Documentation k3s
 
 ## options
 https://docs.k3s.io/
@@ -597,8 +584,8 @@ air-gap (isolé physiquement ou logiquement d'Internet)
 ## Production
 	https://docs.k3s.io/security/hardening-guide
 	
-## INSTALL
-0---------------------------
+### 2- INSTALL K3S (ALL NODES)
+0--------------------------- (all nodes)
 # check cgroups
 cat /proc/cgroups
 
@@ -618,10 +605,10 @@ hugetlb 12      1       1
 pids    7       50      1
 debug   10      1       1
 
-1--------------------------- (IF NOT OK)
+1--------------------------- (all nodes) (IF NOT OK)
 sudo cp -Rp /boot/extlinux/extlinux.conf /boot/extlinux/extlinux.conf.old
 sudo vi /boot/extlinux/extlinux.conf
-
+  # add at the end of APPEND:  cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory
 
 TIMEOUT 30
 DEFAULT primary
@@ -634,7 +621,7 @@ LABEL primary
       INITRD /boot/initrd
       APPEND ${cbootargs} quiet root=/dev/mmcblk0p1 rw rootwait rootfstype=ext4 console=ttyS0,115200n8 console=tty0 fbcon=map:0 net.ifnames=0 cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory [<--- ADD HERE]
       
-2-----------------------------
+2----------------------------- (all nodes)
 sudo swapoff -a
 sudo reboot
 
@@ -645,6 +632,7 @@ sudo chmod -R 777 /data
 
 # install kubernetes server (master)
 curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" sh -s - server \
+  --cluster-init \
   --disable metrics-server \
   --node-ip=10.1.10.1 \
   --bind-address 10.1.10.1 \
@@ -658,11 +646,11 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" sh -s - serve
   --docker \
   --write-kubeconfig-mode 644
     
-# monitoring status & log
+# monitoring status & log (master)
 sudo journalctl -u k3s -f
-	sudo journalctl -u k3s-agent -f
+	sudo journalctl -u k3s-agent -f # <-- (for wokers nodes)
 sudo systemctl status k3s
-	sudo systemctl status k3s-agent
+	sudo systemctl status k3s-agent # <-- (for wokers nodes)
 
 # make kubectl command accessible to everyone on MASTER
 mkdir -p ~/.kube
@@ -674,16 +662,16 @@ echo 'alias k="kubectl"' >> ~/.bashrc
 source ~/.bashrc
 
 # Installation du Plugin GPU (DaemonSet)
-kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.14.1/nvidia-device-plugin.yml
+k apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.14.1/nvidia-device-plugin.yml
 # check deployement
-kubectl get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable."nvidia\.com/gpu"
-kubectl get pods -n kube-system -l name=nvidia-device-plugin-ds
-kubectl get nodes -o json | jq '.items[].status.allocatable'
-kubectl describe node picoworker1 | grep nvidia.com/gpu
+k get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable."nvidia\.com/gpu"
+k get pods -n kube-system -l name=nvidia-device-plugin-ds
+k get nodes -o json | jq '.items[].status.allocatable'
+k describe node picoworker1 | grep nvidia.com/gpu
 
-# Forcer le RuntimeClass (!!!! NOT NECESSARY)
-mkdir nvidia
-vi nvidia/nvidia-runtime.yaml
+# Forcer le RuntimeClass
+mkdir ~/nvidia
+vi ~/nvidia/nvidia-runtime.yaml
 -- code
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
@@ -693,7 +681,7 @@ handler: nvidia
 -- fin code
 
 # deployer
-kubectl apply -f nvidia/nvidia-runtime.yaml
+k apply -f ~/nvidia/nvidia-runtime.yaml
 
 # get token (master)
 sudo cat /data/server/node-token
@@ -701,8 +689,9 @@ K102ce3197d3d61a2d0f5312acaf79c4969f892fc63b66026f4bbe9ef82f396769c::server:1ae1
 
 # add agents (worker1)
 # worker 1
+export TOKEN_K3S="K102ce3197d3d61a2d0f5312acaf79c4969f892fc63b66026f4bbe9ef82f396769c::server:1ae1acbafea78f9882e06b767fa80e7e"
 curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" \
-  K3S_URL=https://10.1.10.1:6443 K3S_TOKEN="K102ce3197d3d61a2d0f5312acaf79c4969f892fc63b66026f4bbe9ef82f396769c::server:1ae1acbafea78f9882e06b767fa80e7e" sh -s - agent \
+  K3S_URL=https://10.1.10.1:6443 K3S_TOKEN=$TOKEN_K3S sh -s - agent \
   --node-ip=10.1.10.11 \
   --data-dir /data \
   --node-label "device-type=jetson-nano" \
@@ -712,8 +701,9 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" \
   --docker
 
 # worker 2
+export TOKEN_K3S="K102ce3197d3d61a2d0f5312acaf79c4969f892fc63b66026f4bbe9ef82f396769c::server:1ae1acbafea78f9882e06b767fa80e7e"
 curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" \
-  K3S_URL=https://10.1.10.1:6443 K3S_TOKEN="K102ce3197d3d61a2d0f5312acaf79c4969f892fc63b66026f4bbe9ef82f396769c::server:1ae1acbafea78f9882e06b767fa80e7e" sh -s - agent \
+  K3S_URL=https://10.1.10.1:6443 K3S_TOKEN=$TOKEN_K3S sh -s - agent \
   --node-ip=10.1.10.12 \
   --data-dir /data \
   --node-label "device-type=jetson-nano" \
@@ -723,8 +713,9 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" \
   --docker
 
 # worker 3
+export TOKEN_K3S="K102ce3197d3d61a2d0f5312acaf79c4969f892fc63b66026f4bbe9ef82f396769c::server:1ae1acbafea78f9882e06b767fa80e7e"
 curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" \
-  K3S_URL=https://10.1.10.1:6443 K3S_TOKEN="K102ce3197d3d61a2d0f5312acaf79c4969f892fc63b66026f4bbe9ef82f396769c::server:1ae1acbafea78f9882e06b767fa80e7e" sh -s - agent \
+  K3S_URL=https://10.1.10.1:6443 K3S_TOKEN=$TOKEN_K3S sh -s - agent \
   --node-ip=10.1.10.13 \
   --data-dir /data \
   --node-label "device-type=jetson-nano" \
@@ -734,8 +725,9 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" \
   --docker
 
 # worker 4
+export TOKEN_K3S="K102ce3197d3d61a2d0f5312acaf79c4969f892fc63b66026f4bbe9ef82f396769c::server:1ae1acbafea78f9882e06b767fa80e7e"
 curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" \
-  K3S_URL=https://10.1.10.1:6443 K3S_TOKEN="K102ce3197d3d61a2d0f5312acaf79c4969f892fc63b66026f4bbe9ef82f396769c::server:1ae1acbafea78f9882e06b767fa80e7e" sh -s - agent \
+  K3S_URL=https://10.1.10.1:6443 K3S_TOKEN=$TOKEN_K3S sh -s - agent \
   --node-ip=10.1.10.14 \
   --data-dir /data \
   --node-label "device-type=jetson-nano" \
@@ -755,12 +747,14 @@ sudo kubectl get nodes
 kubectl get nodes -o wide
 
 # etcd backup (picomaster)
-# every 12H k3s make etcd snapshots in /var/lib/rancher/k3s/server/db/snapshots
-# cron this command
-k3s etcd-snapshot save --name backup-initial
-
-
-
+# every 5H k3s make etcd snapshots in /var/lib/rancher/k3s/server/db/snapshots
+# lister les snapshot
+  sudo k3s etcd-snapshot list --data-dir /data
+  sudo ls -lh /data/server/db/snapshots/
+# create a snapshot
+  sudo k3s etcd-snapshot save --data-dir /data --name "test-snapshot"
+# delete a snapshot
+  sudo k3s etcd-snapshot delete --data-dir /data <NOM_DU_SNAPSHOT>
 
 =========================== UNINSTALL
 sudo /usr/local/bin/k3s-uninstall.sh
@@ -773,7 +767,6 @@ sudo docker system prune -a --volumes
 sudo ip link delete cni0
 sudo ip link delete flannel.1
 sudo reboot
-
 
 ============================ TEST GPU
 
@@ -789,50 +782,7 @@ vi test-gpu/cuda-device-query.yaml
 # sudo make
 
 -- code
-apiVersion: v1
-kind: Pod
-metadata:
-  name: cuda-device-query
-spec:
-  # Équivalent de --net=host
-  hostNetwork: true
-  
-  containers:
-  - name: cuda-container
-    image: nvcr.io/nvidia/l4t-cuda:10.2.460-runtime
-    # Équivalent de la commande passée à la fin du 'docker run'
-    command: ["/samples/1_Utilities/deviceQuery/deviceQuery"]
-    
-    # Sécurité étendue pour résoudre l'erreur "unsupported device id: tegra"
-    securityContext:
-      privileged: true
-    
-    # Variables d'environnement pour forcer la détection du GPU sur Jetson
-    env:
-    - name: NVIDIA_VISIBLE_DEVICES
-      value: all
-    - name: NVIDIA_DRIVER_CAPABILITIES
-      value: all,utility,compute
-    
-    resources:
-      limits:
-        # Indispensable pour activer le GPU via le device plugin
-        nvidia.com/gpu: 1 # requesting 1 GPU
-    
-    volumeMounts:
-    - name: cuda-samples
-      mountPath: /samples
-      readOnly: true
-
-  volumes:
-  - name: cuda-samples
-    hostPath:
-      # Chemin sur le système de fichiers de votre Jetson
-      path: /usr/local/cuda-10.2/samples
-      type: Directory
-
-  # Le pod se supprime (conceptuellement) une fois terminé, comme --rm
-  restartPolicy: Never
+./test-k3s-gpu/cuda-device-query.yaml
 -- fin code
 
 kubectl apply -f test-gpu/cuda-device-query.yaml
@@ -848,7 +798,6 @@ kubectl logs cuda-device-query <-- logs de l'app si tout est OK
 kubectl top pod <-- consommation de ressources
 kubectl exec -it cuda-device-query -- /bin/sh <-- log into a pod
 
-
 kubectl delete -f test-gpu/cuda-device-query.yaml
 docker image ls
 docker rmi nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda12.5.0
@@ -861,35 +810,7 @@ vi test-gpu/cuda-test-finance.yaml
 # sudo make
 
 -- debut code
-apiVersion: v1
-kind: Pod
-metadata:
-  name: cuda-test-finance
-spec:
-  hostNetwork: true
-  containers:
-  - name: cuda-container
-    image: nvcr.io/nvidia/l4t-cuda:10.2.460-runtime
-    command: ["/samples/4_Finance/BlackScholes/BlackScholes"]
-    securityContext:
-      privileged: true
-    env:
-    - name: NVIDIA_VISIBLE_DEVICES
-      value: all
-    - name: NVIDIA_DRIVER_CAPABILITIES
-      value: all,utility,compute
-    resources:
-      limits:
-        nvidia.com/gpu: 1
-    volumeMounts:
-    - name: cuda-samples
-      mountPath: /samples
-      readOnly: true
-  volumes:
-  - name: cuda-samples
-    hostPath:
-      path: /usr/local/cuda-10.2/samples
-  restartPolicy: Never
+./test-k3s-gpu/cuda-test-finance.yaml
 -- fin code
 
 kubectl apply -f test-gpu/cuda-test-finance.yaml
@@ -907,43 +828,7 @@ vi test-gpu/cuda-simulation-nbody.yaml
 # sudo make
 
 -- debut code
-apiVersion: v1
-kind: Pod
-metadata:
-  name: cuda-simulation-nbody
-spec:
-  hostNetwork: true
-  containers:
-  - name: cuda-container
-    image: nvcr.io/nvidia/l4t-cuda:10.2.460-runtime
-    command: ["/samples/5_Simulations/nbody/nbody"]
-    # Avec 131 072 corps, le GPU effectue environ 17 milliards d'interactions (131 072 x 131 072) par itération.
-    # low: 32768, high: 262144
-    args: 
-      - "-benchmark"      # Mode console (pas de fenêtre)
-      - "-numbodies=131072" # Taille de la simulation (ajustable), nombre total de particules (ou "corps")
-      - "-numdevices=1"   # Utilise le GPU de la Jetson
-    securityContext:
-      privileged: true
-    env:
-    - name: NVIDIA_VISIBLE_DEVICES
-      value: all
-    - name: NVIDIA_DRIVER_CAPABILITIES
-      value: all,utility,compute    
-    resources:
-      limits:
-        nvidia.com/gpu: 1    
-    volumeMounts:
-    - name: cuda-samples
-      mountPath: /samples
-      readOnly: true
-  volumes:
-  - name: cuda-samples
-    hostPath:
-      path: /usr/local/cuda-10.2/samples
-      type: Directory
-  restartPolicy: Never
-
+./test-k3s-gpu/cuda-simulation-nbody.yaml
 -- fin code
 
 kubectl apply -f test-gpu/cuda-simulation-nbody.yaml
@@ -962,46 +847,7 @@ vi test-gpu/job-cuda-simulation-nbody.yaml
 # sudo make
 
 -- debut code
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: job-cuda-simulation-nbody
-spec:
-  # Nombre total d'exécutions souhaitées
-  completions: 2
-  # Nombre d'exécutions en simultané (1 par nœud)
-  parallelism: 2
-  template:
-    spec:
-      hostNetwork: true
-      restartPolicy: Never
-      containers:
-      - name: cuda-container
-        image: nvcr.io/nvidia/l4t-cuda:10.2.460-runtime
-        command: ["/samples/5_Simulations/nbody/nbody"]
-        args: 
-          - "-benchmark"
-          - "-numbodies=131072"
-          - "-numdevices=1"
-        securityContext:
-          privileged: true
-        env:
-        - name: NVIDIA_VISIBLE_DEVICES
-          value: all
-        - name: NVIDIA_DRIVER_CAPABILITIES
-          value: all,utility,compute    
-        resources:
-          limits:
-            nvidia.com/gpu: 1    
-        volumeMounts:
-        - name: cuda-samples
-          mountPath: /samples
-          readOnly: true
-      volumes:
-      - name: cuda-samples
-        hostPath:
-          path: /usr/local/cuda-10.2/samples
-          type: Directory
+./test--k3s-gpu/job-cuda-simulation-nbody.yaml
 -- fin code
 
 kubectl apply -f test-gpu/job-cuda-simulation-nbody.yaml
@@ -1025,44 +871,7 @@ vi test-gpu/gpu-stress-bandwidth.yaml
 # sudo make
 
 -- debut code
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: gpu-stress-bandwidth
-spec:  
-  parallelism: 2
-  template:
-    spec:
-      hostNetwork: true
-      restartPolicy: Never
-      containers:
-      - name: cuda-container
-        image: nvcr.io/nvidia/l4t-cuda:10.2.460-runtime
-        command: ["/samples/1_Utilities/bandwidthTest/bandwidthTest"]
-        args: ["--memory=pinned", "--mode=shmoo"] # "shmoo" balaie toutes les tailles de paquets
-        args: 
-	  - "--memory=pinned"
-	  - "--mode=shmoo" # "shmoo" balaie toutes les tailles de paquets
-        securityContext:
-          privileged: true
-        env:
-	- name: NVIDIA_VISIBLE_DEVICES
-	  value: all
-	- name: NVIDIA_DRIVER_CAPABILITIES
-	  value: all,utility,compute
-        resources:
-          limits:
-            nvidia.com/gpu: 1
-        volumeMounts:
-        - name: cuda-samples
-          mountPath: /samples
-          readOnly: true
-      volumes:
-      - name: cuda-samples
-        hostPath:
-          path: /usr/local/cuda-10.2/samples
-          type: Directory
-      restartPolicy: Never
+./test-k3s-gpu/gpu-stress-bandwidth.yaml
 -- fin code
 
 kubectl apply -f test-gpu/gpu-stress-bandwidth.yaml
@@ -1082,59 +891,7 @@ kubectl delete -f test-gpu/gpu-stress-bandwidth.yaml
 == Exemple 6 (heavy image [l4t-ml:r32.7.1-py3, 4-5Go], log in)
 vi test-gpu/jetson-gpu-interactive.yaml
 -- debut code
-apiVersion: v1
-kind: Pod
-metadata:
-  name: jetson-gpu-interactive
-spec:
-  hostNetwork: true
-  containers:
-  - name: ai-container
-    image: nvcr.io/nvidia/l4t-ml:r32.7.1-py3
-    #command: ["sleep", "infinity"]
-    command: ["/bin/bash", "-c"]
-    args:
-      - |
-        # 1. Configuration des dépôts NVIDIA CUDA
-        apt-get update && apt-get install -y software-properties-common wget
-        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/arm64/cuda-ubuntu1804.pin
-        mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
-        apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/arm64/7fa2af80.pub
-        add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/arm64/ /"
-        
-        # 2. Installation de cuDNN 8
-        apt-get update
-        apt-get install -y libcudnn8 libcudnn8-dev
-        
-        # 3. Mise à jour du cache LD pour inclure le dossier CUDA monté
-        ldconfig /usr/local/cuda-10.2/lib64
-        echo "**Configuration terminée et Cache LD mis à jour.**"
-        
-        # 4. Maintien du Pod en vie
-        sleep infinity
-    securityContext:
-      privileged: true
-    env:
-    - name: NVIDIA_VISIBLE_DEVICES
-      value: all
-    - name: NVIDIA_DRIVER_CAPABILITIES
-      value: all,utility,compute,video,graphics
-    - name: LD_LIBRARY_PATH
-      value: "/usr/local/cuda-10.2/lib64"
-    resources:
-      limits:
-        nvidia.com/gpu: 1
-    volumeMounts:
-    - name: cuda-volume
-      mountPath: /usr/local/cuda-10.2
-      readOnly: true
-  volumes:
-  - name: cuda-volume
-    hostPath:
-      path: /usr/local/cuda-10.2
-      type: Directory
-  restartPolicy: Never
-
+./test-k3s-gpu/jetson-gpu-interactive.yaml
 -- fin code
 
 kubectl apply -f test-gpu/jetson-gpu-interactive.yaml
@@ -1176,152 +933,45 @@ sudo make clean
 
 - DOCKER CLEAN WITH ANSIBLE 
 vi ~/my_ansible/playbook/clean-docker.yml
--- debut code
-
-- name: Nettoyage complet de Docker sur le cluster Jetson
-  hosts: cluster
-  tasks:
-    - name: "Supprimer toutes les images non utilisées (docker image prune -a)"
-      shell: docker image prune -a -f
-      register: image_prune_output
-
-    - name: "Nettoyage complet du système (docker system prune -f)"
-      shell: docker system prune -f
-      register: system_prune_output
-
-    - name: "Afficher le gain d'espace sur {{ inventory_hostname }}"
-      debug:
-        msg: 
-          - "Images supprimées : {{ image_prune_output.stdout }}"
-          - "Système nettoyé : {{ system_prune_output.stdout }}"
-
-    - name: "Vérifier l'espace disque restant"
-      shell: df -h /
-      register: disk_space
-    
-    - name: "Espace disque final"
-      debug:
-        var: disk_space.stdout_lines[1]
-
+-- debut code (all nodes)
+./ansible/clean-docker.yaml
 -- fin code
 
+-- debut code (all nodes)
+./ansible/clean-docker-nodes.yaml
+-- fin code
+#1
 ansible-playbook ~/my_ansible/playbook/clean-docker.yml
 	
 - SYSTEM CLEAN WITH ANSIBLE 
 vi ~/my_ansible/playbook/clean-system.yml
 -- debut code
-- name: Nettoyage complet des noeuds Jetson
-  hosts: slaves
-  become: yes
-  tasks:
-    - name: "Nettoyage Apt (autoremove et autoclean)"
-      apt:
-        autoremove: yes
-        autoclean: yes
-        update_cache: yes
-
-    - name: "Suppression du cache NVIDIA"
-      file:
-        path: "/home/{{ ansible_user }}/.nv/"
-        state: absent
-
-    - name: "Nettoyage Docker system prune"
-      shell: "docker system prune -a -f"
-      args:
-        warn: false
-
-    - name: "Liberation de la RAM (drop_caches)"
-      shell: "sync && echo 3 > /proc/sys/vm/drop_caches"
-      args:
-        warn: false
-
-    - name: "Verification de l'espace disque final"
-      command: "df -h /"
-      register: disk_space
-
-    - name: "Affichage de l'espace restant"
-      debug:
-        msg: "{{ disk_space.stdout_lines[1] }}"
-
-
+./ansible/clean-system.yaml
 -- fin code
-
+#2
 ansible-playbook ~/my_ansible/playbook/clean-system.yml -K
 
-- REBOOT
+- REBOOT NODES
 vi ~/my_ansible/playbook/reboot_node.yml
 -- debut code
-- name: Redemarrage du cluster Jetson
-  hosts: slaves
-  become: yes  # Necessaire pour les droits d'administration
-  tasks:
-    - name: "Lancement du redemarrage"
-      reboot:
-        msg: "Redemarrage initie par Ansible suite a la maintenance"
-        connect_timeout: 5
-        reboot_timeout: 300
-        pre_reboot_delay: 0
-        post_reboot_delay: 30
-        test_command: uptime
-
-    - name: "Verification de la disponibilite"
-      debug:
-        msg: "L'hote {{ inventory_hostname }} est de nouveau operationnel."
-
+./ansible/reboot_node.yaml
 -- fin code
 ansible-playbook ~/my_ansible/playbook/reboot_node.yml -K
 
 - SHUTDOWN 
 vi ~/my_ansible/playbook/shutdown_node.yml
 -- debut code
-- name: Extinction du cluster Jetson
-  hosts: slaves
-  become: yes
-  tasks:
-    - name: "Extinction immediate des nodes"
-      shell: "shutdown -h now"
-      async: 1  # Permet a Ansible de liberer la connexion avant la coupure
-      poll: 0
-      ignore_errors: true
-
-    - name: "Confirmation d'envoi"
-      debug:
-        msg: "L'ordre d'extinction a ete envoye a {{ inventory_hostname }}."
-
+./ansible/shutdown_node.yaml
 -- fin code
+#3
 ansible-playbook ~/my_ansible/playbook/shutdown_node.yml -K
 
 - RESTART k3s-agent 
 vi ~/my_ansible/playbook/restart_k3s_agents.yml
 -- debut code
-- name: Redemarrage du service K3s Agent
-  hosts: slaves
-  become: yes
-  tasks:
-    - name: "Relance du service k3s-agent"
-      systemd:
-        name: k3s-agent
-        state: restarted
-        enabled: yes
-
-    - name: "Attente du demarrage du service"
-      pause:
-        seconds: 5
-
-    - name: "Verification du statut du service"
-      command: systemctl is-active k3s-agent
-      register: agent_status
-      changed_when: false
-
-    - name: "Affichage du statut"
-      debug:
-        msg: "Le service k3s-agent sur {{ inventory_hostname }} est {{ agent_status.stdout }}"
+./ansible/restart_k3s_agents.yaml
 -- fin code
 ansible-playbook ~/my_ansible/playbook/restart_k3s_agents.yml -K
-
-
-
-
 	
 ====================== EXTRAS: MOUNT SHARED DISK FROM EXTERNAL USB
 
@@ -1336,11 +986,10 @@ sdb
 
 - edit /etc/fstab
 sudo vi /etc/fstab
-
--- add
+-- debut code
 UUID=54e54abe-7f68-4496-b62a-66d919bd69e4  /k3s-ext-1  ext4  defaults,nofail  0  2
 UUID=932933f6-b8ec-4c7b-b982-a717d22f6c26  /k3s-ext-2  ext4  defaults,nofail  0  2
--- end add
+-- fin code
 
 -  create folders
 sudo mkdir /k3s-ext-1 /k3s-ext-2
@@ -1356,17 +1005,23 @@ df -h
 
 - install nfs-server (master)
 sudo apt install nfs-kernel-server -y
+sudo systemctl edit nfs-kernel-server
+-- debut code
+[Unit]
+After=local-fs.target
+Requires=local-fs.target
+-- fin code
+sudo systemctl daemon-reload
 sudo systemctl enable nfs-kernel-server
 sudo systemctl start nfs-kernel-server
 sudo chown nobody:nogroup /k3s-ext-1
 sudo chown nobody:nogroup /k3s-ext-2
 
 sudo vi /etc/exports
--- add
+-- debut code
 /k3s-ext-1 *(rw,sync,no_subtree_check,no_root_squash)
 /k3s-ext-2 *(rw,sync,no_subtree_check,no_root_squash)
---fin add
-
+--fin code
 sudo exportfs -ra
 
 - check export
@@ -1394,56 +1049,7 @@ sudo systemctl restart k3s-agent
 sudo vi /data/server/manifests/nfs-provisioner.yaml
 
 -- debut code
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: nfs
----
-# this one will delete data on usb1 after pod,pvc will be delete
-apiVersion: helm.cattle.io/v1
-kind: HelmChart
-metadata:
-  name: nfs-usb1
-  namespace: nfs
-spec:
-  chart: nfs-subdir-external-provisioner
-  repo: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
-  targetNamespace: nfs
-  set:
-    nfs.server: picomaster #10.1.10.1
-    nfs.path: /k3s-ext-1 # path to the NFS share
-    storageClass.name: nfs-usb1
-    storageClass.defaultClass: "false"
-    storageClass.reclaimPolicy: Delete
-    storageClass.volumeBindingMode: WaitForFirstConsumer
-    storageClass.allowVolumeExpansion: "true"
-    storageClass.archiveOnDelete: "false"
-    storageClass.onDelete: "delete"
-    #nfs.mountOptions: "{nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2}"
-    nfs.mountOptions: "{nfsvers=3,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600}"
----
-# this one will retain data on usb2 after pod,pvc will be delete
-apiVersion: helm.cattle.io/v1
-kind: HelmChart
-metadata:
-  name: nfs-usb2
-  namespace: nfs
-spec:
-  chart: nfs-subdir-external-provisioner
-  repo: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
-  targetNamespace: nfs
-  set:
-    nfs.server: picomaster #10.1.10.1
-    nfs.path: /k3s-ext-2 # path to the NFS share
-    storageClass.name: nfs-usb2
-    storageClass.defaultClass: "false"
-    storageClass.reclaimPolicy: Retain
-    storageClass.volumeBindingMode: WaitForFirstConsumer
-    storageClass.allowVolumeExpansion: "true"
-    storageClass.archiveOnDelete: "false"
-    storageClass.onDelete: "delete"
-    #nfs.mountOptions: "{nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2}"
-    nfs.mountOptions: "{nfsvers=3,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600}"
+./nfs/nfs-provisioner.yaml
 -- fin code
 
 - wait a little for the helm controller to do its thing
@@ -1457,33 +1063,7 @@ mkdir test-gpu
 vi test-gpu/nfs-setup.yaml
 
 -- debut code
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: nfsclaim-1
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: nfs-usb1
-  resources:
-    requests:
-      storage: 100Mi
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: nginx-pod-1
-spec:
-  containers:
-    - name: nginx-pod-1
-      image: nginx
-      volumeMounts:
-        - name: nfs-volume
-          mountPath: /data
-  volumes:
-    - name: nfs-volume
-      persistentVolumeClaim:
-        claimName: nfsclaim-1
+./nfs/nfs-setup.yaml
 -- fin code
 
 kubectl apply -f test-gpu/nfs-setup.yaml
@@ -1516,53 +1096,7 @@ mkdir -p ~/my-storage/
 vi ~/my-storage/my-storage.yml
 
 -- debut code
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: claude-ia
----
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: nfs-claude
-provisioner: kubernetes.io/no-provisioner # Indique un couplage manuel
-reclaimPolicy: Delete  # Retain
-volumeBindingMode: WaitForFirstConsumer # Immediate
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: nfs-pv-claude
-spec:
-  capacity:
-    storage: 4Gi
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: nfs-claude
-  persistentVolumeReclaimPolicy: Retain
-  nfs:
-    server: picomaster
-    path: /k3s-ext-1/my-storage
-  mountOptions:
-    - nfsvers=3
-    - rsize=1048576
-    - wsize=1048576
-    - proto=tcp
-    - hard
-    - timeo=600
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: nfs-pvc-claude
-  namespace: claude-ia
-spec:
-  storageClassName: nfs-claude
-  accessModes:
-    - ReadWriteMany
-  resources:
-    requests:
-      storage: 4Gi
+./nfs/my-storage.yaml
 -- fin code
 
 - apply yaml file
@@ -1626,93 +1160,7 @@ mkdir ~/registry
 vi ~/registry/registry.yaml
 
 -- debut code
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: registry 
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: registry-pvc
-  namespace: registry # On le met souvent ici ou dans un namespace dédié
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: nfs-usb2 # Utilise votre 2ème clé USB
-  resources:
-    requests:
-      storage: 12Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: private-registry
-  namespace: registry
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: registry
-  template:
-    metadata:
-      labels:
-        app: registry
-    spec:
-      containers:
-        - name: registry
-          image: registry:2
-          ports:
-            - containerPort: 5000
-          env:
-            - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
-              value: /var/lib/registry
-            # Enable deletion of images via API
-            - name: REGISTRY_STORAGE_DELETE_ENABLED
-	      value: "true"
-	    # Set log level for debugging
-	    - name: REGISTRY_LOG_LEVEL
-              value: "info"
-          volumeMounts:
-            - name: storage
-              mountPath: /var/lib/registry
-          resources:
-            requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
-              memory: "2.5Gi"
-          # Health check ensures the registry is responding
-          livenessProbe:
-            httpGet:
-              path: /v2/
-              port: 5000
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /v2/
-              port: 5000
-            initialDelaySeconds: 5
-            periodSeconds: 10
-      volumes:
-        - name: storage
-          persistentVolumeClaim:
-            claimName: registry-pvc
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: registry-service
-  namespace: registry
-spec:
-  type: NodePort
-  selector:
-    app: registry
-  ports:
-    - port: 5000 # Le port interne a k3s du Service (pod to pod com)
-      targetPort: 5000 # Le port du Conteneur (app is running on inside container)
-      nodePort: 30500 # Port pour accéder au registre depuis tous les noeuds du cluster
+./registry/registry.yaml
 -- fin code
 
 - apply or delete registry
@@ -1789,16 +1237,7 @@ ls -R /k3s-ext-2/registry-registry-pvc-pvc-efd5fd02-934e-4113-8924-6de5ac2fa9d1/
 - use an image
 vi test-gpu/pod-my-alpine.yaml
 -- debut code
-apiVersion: v1
-kind: Pod
-metadata:
-  name: pod-my-alpine
-spec:
-  containers:
-  - name: alpine
-    image: picomaster:30500/my-alpine:v1 # Votre image locale
-    imagePullPolicy: Always # Force le téléchargement à chaque démarrage
-    command: ["/bin/sh", "-c", "echo 'Salut depuis USB2' && sleep 3600"]
+./registry/pod-my-alpine.yaml
 -- fin code
 k apply -f test-gpu/pod-my-alpine.yaml
 kubectl logs pod-my-alpine # you will see kubectl logs pod-my-alpine
@@ -1878,87 +1317,23 @@ docker image prune -a
 == Exemple 6 (heavy image [picomaster:30500/jetson-base:v1, 5+Go], log in)
 # v2: digest: sha256:13c4a6838763ae15fa1fdb8cf1d982978c53e17471c0f388e7491bd43159328d size: 8517
 
-vi test-gpu/jetson-gpu-interactive.yaml
+vi test-gpu/jetson-gpu-interactive-base.yaml
 -- debut code
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: jetson-base 
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: nfsclaim
-  namespace: jetson-base
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: nfs-usb1
-  resources:
-    requests:
-      storage: 4Gi
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: jetson-gpu-interactive
-  namespace: jetson-base
-spec:
-  hostNetwork: true
-  containers:
-  - name: ai-container
-    image: picomaster:30500/jetson-base:v1
-    #command: ["sleep", "infinity"]
-    command: ["/bin/bash", "-c"]
-    args:
-      - |        
-        # 1. Mise à jour du cache LD pour inclure le dossier CUDA monté
-        ldconfig /usr/local/cuda-10.2/lib64
-        echo "**Configuration terminée et Cache LD mis à jour.**"
-        
-        # 2. Maintien du Pod en vie
-        sleep infinity
-    securityContext:
-      privileged: true
-    env:
-    - name: NVIDIA_VISIBLE_DEVICES
-      value: all
-    - name: NVIDIA_DRIVER_CAPABILITIES
-      value: all,utility,compute,video,graphics
-    - name: LD_LIBRARY_PATH
-      value: "/usr/local/cuda-10.2/lib64"
-    resources:
-      limits:
-        nvidia.com/gpu: 1
-    volumeMounts:
-    - name: cuda-volume
-      mountPath: /usr/local/cuda-10.2
-      readOnly: true
-    - name: nfs-volume
-      mountPath: /data
-  volumes:
-  - name: cuda-volume
-    hostPath:
-      path: /usr/local/cuda-10.2
-      type: Directory
-  - name: nfs-volume
-    persistentVolumeClaim:
-      claimName: nfsclaim
-  restartPolicy: Never
+./test-k3s-gpu/jetson-gpu-interactive-base.yaml
 -- fin code
 
-kubectl apply -f test-gpu/jetson-gpu-interactive.yaml
+kubectl apply -f test-gpu/jetson-gpu-interactive-base.yaml
 kubectl get pods -n jetson-base -w
-kubectl describe pod jetson-gpu-interactive -n jetson-base
-kubectl logs jetson-gpu-interactive -n jetson-base
-        kubectl logs -f jetson-gpu-interactive -n jetson-base # <-- IMPORTANT (look at logs until install is finished or build new image based on nvcr.io/nvidia/l4t-ml:r32.7.1-py3)
+kubectl describe pod jetson-gpu-interactive-base -n jetson-base
+kubectl logs jetson-gpu-interactive-base -n jetson-base
+        kubectl logs -f jetson-gpu-interactive-base -n jetson-base # <-- IMPORTANT (look at logs until install is finished or build new image based on nvcr.io/nvidia/l4t-ml:r32.7.1-py3)
 # inside pod
-kubectl exec -it jetson-gpu-interactive -n jetson-base -- /bin/bash
+kubectl exec -it jetson-gpu-interactive-base -n jetson-base -- /bin/bash
 # delete pod
-kubectl delete -f test-gpu/jetson-gpu-interactive.yaml
+kubectl delete -f test-gpu/jetson-gpu-interactive-base.yaml
 
 - Exple 1: get cuda infos
-kubectl exec -it jetson-gpu-interactive -n jetson-base -- /bin/bash
+kubectl exec -it jetson-gpu-interactive-base -n jetson-base -- /bin/bash
 nano /data/test1.py
 -- debut code
 # 0. Test PyTorch + CUDA
@@ -1983,7 +1358,7 @@ else:
 python3 /data/test1.py
 
 - Exple 2: cuda gpu compute
-kubectl exec -it jetson-gpu-interactive -n jetson-base -- /bin/bash
+kubectl exec -it jetson-gpu-interactive-base -n jetson-base -- /bin/bash
 nano /data/test2.py
 -- debut code
 

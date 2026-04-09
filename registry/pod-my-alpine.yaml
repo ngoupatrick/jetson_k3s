@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-my-alpine
+spec:
+  containers:
+  - name: alpine
+    image: picomaster:30500/my-alpine:v1 # Votre image locale
+    imagePullPolicy: Always # Force le téléchargement à chaque démarrage
+    command: ["/bin/sh", "-c", "echo 'Salut depuis USB2' && sleep 3600"]

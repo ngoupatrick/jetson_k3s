@@ -1,0 +1,10 @@
+- name: Récupérer le hostname de tous les nœuds
+  hosts: cluster
+  tasks:
+    - name: Exécuter hostname -f
+      command: hostname -f
+      register: result_hostname
+
+    - name: Afficher le résultat
+      debug:
+        msg: "Le nom d'hôte de {{ inventory_hostname }} est {{ result_hostname.stdout }}"

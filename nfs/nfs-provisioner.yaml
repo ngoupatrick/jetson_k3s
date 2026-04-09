@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nfs
+---
+# this one will delete data on usb1 after pod,pvc will be delete
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: nfs-usb1
+  namespace: nfs
+spec:
+  chart: nfs-subdir-external-provisioner
+  repo: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
+  targetNamespace: nfs
+  set:
+    nfs.server: picomaster #10.1.10.1
+    nfs.path: /k3s-ext-1 # path to the NFS share
+    storageClass.name: nfs-usb1
+    storageClass.defaultClass: "false"
+    storageClass.reclaimPolicy: Delete
+    storageClass.volumeBindingMode: WaitForFirstConsumer
+    storageClass.allowVolumeExpansion: "true"
+    storageClass.archiveOnDelete: "false"
+    storageClass.onDelete: "delete"
+    #nfs.mountOptions: "{nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2}"
+    nfs.mountOptions: "{nfsvers=3,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600}"
+---
+# this one will retain data on usb2 after pod,pvc will be delete
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: nfs-usb2
+  namespace: nfs
+spec:
+  chart: nfs-subdir-external-provisioner
+  repo: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner
+  targetNamespace: nfs
+  set:
+    nfs.server: picomaster #10.1.10.1
+    nfs.path: /k3s-ext-2 # path to the NFS share
+    storageClass.name: nfs-usb2
+    storageClass.defaultClass: "false"
+    storageClass.reclaimPolicy: Retain
+    storageClass.volumeBindingMode: WaitForFirstConsumer
+    storageClass.allowVolumeExpansion: "true"
+    storageClass.archiveOnDelete: "false"
+    storageClass.onDelete: "delete"
+    #nfs.mountOptions: "{nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2}"
+    nfs.mountOptions: "{nfsvers=3,proto=tcp,rsize=1048576,wsize=1048576,hard,timeo=600}"

@@ -1,0 +1,16 @@
+- name: Redemarrage du cluster Jetson
+  hosts: slaves
+  become: yes  # Necessaire pour les droits d'administration
+  tasks:
+    - name: "Lancement du redemarrage"
+      reboot:
+        msg: "Redemarrage initie par Ansible suite a la maintenance"
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+        test_command: uptime
+
+    - name: "Verification de la disponibilite"
+      debug:
+        msg: "L'hote {{ inventory_hostname }} est de nouveau operationnel."

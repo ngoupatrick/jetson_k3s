@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-cuda-simulation-nbody
+spec:
+  # Nombre total d'exécutions souhaitées
+  completions: 2
+  # Nombre d'exécutions en simultané (1 par nœud)
+  parallelism: 2
+  template:
+    spec:
+      hostNetwork: true
+      restartPolicy: Never
+      containers:
+      - name: cuda-container
+        image: nvcr.io/nvidia/l4t-cuda:10.2.460-runtime
+        command: ["/samples/5_Simulations/nbody/nbody"]
+        args: 
+          - "-benchmark"
+          - "-numbodies=131072"
+          - "-numdevices=1"
+        securityContext:
+          privileged: true
+        env:
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: all
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: all,utility,compute    
+        resources:
+          limits:
+            nvidia.com/gpu: 1    
+        volumeMounts:
+        - name: cuda-samples
+          mountPath: /samples
+          readOnly: true
+      volumes:
+      - name: cuda-samples
+        hostPath:
+          path: /usr/local/cuda-10.2/samples
+          type: Directory

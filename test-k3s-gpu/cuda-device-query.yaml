@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cuda-device-query
+spec:
+  # Équivalent de --net=host
+  hostNetwork: true
+  
+  containers:
+  - name: cuda-container
+    image: nvcr.io/nvidia/l4t-cuda:10.2.460-runtime
+    # Équivalent de la commande passée à la fin du 'docker run'
+    command: ["/samples/1_Utilities/deviceQuery/deviceQuery"]
+    
+    # Sécurité étendue pour résoudre l'erreur "unsupported device id: tegra"
+    securityContext:
+      privileged: true
+    
+    # Variables d'environnement pour forcer la détection du GPU sur Jetson
+    env:
+    - name: NVIDIA_VISIBLE_DEVICES
+      value: all
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: all,utility,compute
+    
+    resources:
+      limits:
+        # Indispensable pour activer le GPU via le device plugin
+        nvidia.com/gpu: 1 # requesting 1 GPU
+    
+    volumeMounts:
+    - name: cuda-samples
+      mountPath: /samples
+      readOnly: true
+
+  volumes:
+  - name: cuda-samples
+    hostPath:
+      # Chemin sur le système de fichiers de votre Jetson
+      path: /usr/local/cuda-10.2/samples
+      type: Directory
+
+  # Le pod se supprime (conceptuellement) une fois terminé, comme --rm
+  restartPolicy: Never

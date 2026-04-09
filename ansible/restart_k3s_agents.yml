@@ -1,0 +1,22 @@
+- name: Redemarrage du service K3s Agent
+  hosts: slaves
+  become: yes
+  tasks:
+    - name: "Relance du service k3s-agent"
+      systemd:
+        name: k3s-agent
+        state: restarted
+        enabled: yes
+
+    - name: "Attente du demarrage du service"
+      pause:
+        seconds: 5
+
+    - name: "Verification du statut du service"
+      command: systemctl is-active k3s-agent
+      register: agent_status
+      changed_when: false
+
+    - name: "Affichage du statut"
+      debug:
+        msg: "Le service k3s-agent sur {{ inventory_hostname }} est {{ agent_status.stdout }}"

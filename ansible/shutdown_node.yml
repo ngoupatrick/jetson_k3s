@@ -1,0 +1,13 @@
+- name: Extinction du cluster Jetson
+  hosts: slaves
+  become: yes
+  tasks:
+    - name: "Extinction immediate des nodes"
+      shell: "shutdown -h now"
+      async: 1  # Permet a Ansible de liberer la connexion avant la coupure
+      poll: 0
+      ignore_errors: true
+
+    - name: "Confirmation d'envoi"
+      debug:
+        msg: "L'ordre d'extinction a ete envoye a {{ inventory_hostname }}."

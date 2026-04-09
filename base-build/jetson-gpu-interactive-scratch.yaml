@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: jetson-gpu-interactive-scratch
+spec:
+  hostNetwork: true
+  containers:
+  - name: ai-container
+    image: picomaster:30500/jetson-base:light
+    command: ["sleep", "infinity"]
+    securityContext:
+      privileged: true
+    env:
+    - name: NVIDIA_VISIBLE_DEVICES
+      value: all
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: all,utility,compute,video,graphics
+    - name: LD_LIBRARY_PATH
+      value: "/usr/local/cuda-10.2/lib64"
+    resources:
+      limits:
+        nvidia.com/gpu: 1    
+  restartPolicy: Never

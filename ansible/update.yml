@@ -1,0 +1,6 @@
+- hosts: cluster
+  become: yes
+  tasks:
+    - name: Mettre à jour le cache apt
+      apt:
+        update_cache: yes

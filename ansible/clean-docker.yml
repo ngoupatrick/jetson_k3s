@@ -1,0 +1,24 @@
+- name: Nettoyage complet de Docker sur le cluster Jetson
+  hosts: cluster
+  tasks:
+    - name: "Supprimer toutes les images non utilisées (docker image prune -a)"
+      shell: docker image prune -a -f
+      register: image_prune_output
+
+    - name: "Nettoyage complet du système (docker system prune -f)"
+      shell: docker system prune -f
+      register: system_prune_output
+
+    - name: "Afficher le gain d'espace sur {{ inventory_hostname }}"
+      debug:
+        msg: 
+          - "Images supprimées : {{ image_prune_output.stdout }}"
+          - "Système nettoyé : {{ system_prune_output.stdout }}"
+
+    - name: "Vérifier l'espace disque restant"
+      shell: df -h /
+      register: disk_space
+    
+    - name: "Espace disque final"
+      debug:
+        var: disk_space.stdout_lines[1]

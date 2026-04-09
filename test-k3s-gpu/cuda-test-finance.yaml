@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cuda-test-finance
+spec:
+  hostNetwork: true
+  containers:
+  - name: cuda-container
+    image: nvcr.io/nvidia/l4t-cuda:10.2.460-runtime
+    command: ["/samples/4_Finance/BlackScholes/BlackScholes"]
+    securityContext:
+      privileged: true
+    env:
+    - name: NVIDIA_VISIBLE_DEVICES
+      value: all
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: all,utility,compute
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+    volumeMounts:
+    - name: cuda-samples
+      mountPath: /samples
+      readOnly: true
+  volumes:
+  - name: cuda-samples
+    hostPath:
+      path: /usr/local/cuda-10.2/samples
+  restartPolicy: Never

@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cuda-simulation-nbody
+spec:
+  hostNetwork: true
+  containers:
+  - name: cuda-container
+    image: nvcr.io/nvidia/l4t-cuda:10.2.460-runtime
+    command: ["/samples/5_Simulations/nbody/nbody"]
+    # Avec 131 072 corps, le GPU effectue environ 17 milliards d'interactions (131 072 x 131 072) par itération.
+    # low: 32768, high: 262144
+    args: 
+      - "-benchmark"      # Mode console (pas de fenêtre)
+      - "-numbodies=131072" # Taille de la simulation (ajustable), nombre total de particules (ou "corps")
+      - "-numdevices=1"   # Utilise le GPU de la Jetson
+    securityContext:
+      privileged: true
+    env:
+    - name: NVIDIA_VISIBLE_DEVICES
+      value: all
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: all,utility,compute    
+    resources:
+      limits:
+        nvidia.com/gpu: 1    
+    volumeMounts:
+    - name: cuda-samples
+      mountPath: /samples
+      readOnly: true
+  volumes:
+  - name: cuda-samples
+    hostPath:
+      path: /usr/local/cuda-10.2/samples
+      type: Directory
+  restartPolicy: Never

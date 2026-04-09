@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: claude-ia
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-claude
+provisioner: kubernetes.io/no-provisioner # Indique un couplage manuel
+reclaimPolicy: Delete  # Retain
+volumeBindingMode: WaitForFirstConsumer # Immediate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv-claude
+spec:
+  capacity:
+    storage: 4Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: nfs-claude
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: picomaster
+    path: /k3s-ext-1/my-storage
+  mountOptions:
+    - nfsvers=3
+    - rsize=1048576
+    - wsize=1048576
+    - proto=tcp
+    - hard
+    - timeo=600
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-pvc-claude
+  namespace: claude-ia
+spec:
+  storageClassName: nfs-claude
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 4Gi
