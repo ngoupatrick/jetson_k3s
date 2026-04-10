@@ -104,9 +104,12 @@ def main():
     for epoch in range(EPOCHS):
         running_loss = 0.0
         start_time = time.time()
+        start_readable = datetime.fromtimestamp(start_time).strftime('%H:%M:%S')
+        logger.info(f"Start time {start_readable} - epoch {epoch}...")
         i = 1
 
         for images, labels in train_loader:
+            s_readable = datetime.fromtimestamp(time.time()).strftime('%H:%M:%S')            
             images, labels = images.to(DEVICE), labels.to(DEVICE)
             
             optimizer.zero_grad()
@@ -118,7 +121,7 @@ def main():
             running_loss += loss.item()
             
             if i % 5 == 0: # Log tous les 5 batches pour ne pas saturer la console
-                logger.info(f"Batch {i}, Loss: {loss.item():.4f} - Epoch {epoch}")
+                logger.info(f"Batch {i}, Start time {s_readable} - Loss: {loss.item():.4f} - Epoch {epoch}")
             i += 1
 
         epoch_loss = running_loss / len(train_loader)

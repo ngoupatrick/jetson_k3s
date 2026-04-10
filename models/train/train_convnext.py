@@ -7,7 +7,8 @@ print("-- Import libs --")
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import datasets, transforms, models
+from torchvision import datasets, transforms
+import timm
 
 import time
 from datetime import datetime
@@ -16,7 +17,7 @@ import sys
 import argparse
 import os
 
-# Configuration du logging pour Kubernetes
+# Configuration for logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -25,7 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def main():
-    parser = argparse.ArgumentParser(description="Script pour ConvNeXt Tiny.")
+    parser = argparse.ArgumentParser(description="Script to train ConvNeXt Tiny.")
     parser.add_argument("--model_path", type=str, default="/mnt/code/models/convnext_tiny-983f1562.pth", help="Model weights path.")
     parser.add_argument("--data_dir", type=str, default="/mnt/code/images", help="Directory containing the images.")
     parser.add_argument("--save_path", type=str, default="/mnt/code/glass_model_convnext.pth", help="Path to save the trained model.")
@@ -33,11 +34,15 @@ def main():
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training.")
     args = parser.parse_args()
         
-    if not os.path.exists(args.model_path):
+    if os.path.exists(args.model_path):
+        logger.info(f"Model weights found at {args.model_path}")
+    else:
         logger.error(f"Model weights not found at {args.model_path}")
         sys.exit(1)
         
-    if not os.path.exists(args.data_dir):
+    if os.path.exists(args.data_dir):
+        logger.info(f"Data directory found at {args.data_dir}")
+    else:
         logger.error(f"Data directory not found at {args.data_dir}")
         sys.exit(1)
         
@@ -50,8 +55,14 @@ def main():
     DATA_DIR = args.data_dir
     SAVE_PATH = args.save_path
     
-    # 1. Pretraitement
-    logger.info(f"-- Pretraitement --")
+    logger.info(f"------ Batch Size {BATCH_SIZE}")
+    logger.info(f"------ Epochs found at {EPOCHS}")
+    logger.info(f"------ Model weights {LOCAL_WEIGHTS}")
+    logger.info(f"------ Data images directory {DATA_DIR}")
+    logger.info(f"------ Save path {SAVE_PATH}")
+
+    # 1. Preprocessing
+    logger.info(f"-- Preprocessing --")
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.RandomHorizontalFlip(),
@@ -59,51 +70,65 @@ def main():
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
     
-    # 2. Chargement des donnees
+    # 2. Data Loading
+    logger.info("-- Loading data --")
     dataset = datasets.ImageFolder(root=DATA_DIR, transform=transform)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+    logger.info(f"Classes detected : {dataset.class_to_idx}")
     num_classes = len(dataset.classes)
+    logger.info(f"Number of classes : {num_classes}")
+    total_images = len(dataset)
+    logger.info(f"Total number of images : {total_images}")
     
-    # 3. Modele ConvNeXt Tiny
-    logger.info("-- Chargement Modele ConvNeXt Tiny --")
-    model = models.convnext_tiny(weights=None)
-    model.load_state_dict(torch.load(LOCAL_WEIGHTS, map_location=DEVICE))
+    # 3. ConvNeXt Tiny Model
+    logger.info("-- Loading ConvNeXt Tiny Model --")
+    model = timm.create_model('convnext_tiny', pretrained=False, num_classes=num_classes)
     
-    # Modifier la derniere couche (ConvNeXt utilise classifier[2])
-    in_features = model.classifier[2].in_features
-    model.classifier[2] = nn.Linear(in_features, num_classes)
+    # Load local weights
+    checkpoint = torch.load(LOCAL_WEIGHTS, map_location='cpu')
+    model.load_state_dict(checkpoint, strict=False)
     
     model = model.to(DEVICE)
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = optim.AdamW(model.parameters(), lr=0.0001)
     
-    # 4. Boucle d'entrainement
-    logger.info(f"Debut de l'entrainement sur {DEVICE}...")
+    # 4. Training Loop
+    logger.info("-- Start Training Loop --")
+    logger.info(f"Starting training on {DEVICE}...")
     model.train()
     
     for epoch in range(EPOCHS):
         running_loss = 0.0
         start_time = time.time()
+        start_readable = datetime.fromtimestamp(start_time).strftime('%H:%M:%S')
+        logger.info(f"Start time {start_readable} - epoch {epoch}...")
         i = 1
+
         for images, labels in train_loader:
+            s_readable = datetime.fromtimestamp(time.time()).strftime('%H:%M:%S')
             images, labels = images.to(DEVICE), labels.to(DEVICE)           
+
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
+
             running_loss += loss.item()
+            
             if i % 5 == 0:
-                logger.info(f"Batch {i}, Loss: {loss.item():.4f} - Epoch {epoch}")
+                logger.info(f"Batch {i}, Start time {s_readable} - Loss: {loss.item():.4f} - Epoch {epoch}")
             i += 1
 
         epoch_loss = running_loss / len(train_loader)
-        logger.info(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {epoch_loss:.4f} - Temps: {time.time() - start_time:.2f}s")
+        duration = time.time() - start_time
+        logger.info(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {epoch_loss:.4f} - Time: {duration:.2f}s")
         
-    # 5. Sauvegarde
+    # 5. Save Model
+    logger.info(f"-- Saving to {SAVE_PATH} --")
     torch.save(model.state_dict(), SAVE_PATH)
-    logger.info(f"Modele sauvegarde dans {SAVE_PATH}")
+    logger.info(f"Model saved in {SAVE_PATH}")
 
 if __name__ == "__main__":
     main()

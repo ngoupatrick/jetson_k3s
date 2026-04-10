@@ -18,8 +18,7 @@ logger = logging.getLogger(__name__)
 
 logger.info(f"-- Init Device --")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MODEL_PATH = "/mnt/code/glass_model.pth"
-#MODEL_PATH = "/mnt/code/glass_model_mobilenet.pth"
+MODEL_PATH = "/mnt/code/glass_model_resnet50.pth"
 # L'ordre doit correspondre à l'ordre alphabetique des dossiers
 # {'empty': 0, 'plastic': 1, 'with-beer': 2, 'with-coffee': 3, 'with-juice': 4, 'with-milk': 5, 'with-tea': 6, 'with-water': 7, 'with-wine': 8}
 CLASSES = ['empty', 'plastic', 'with-beer', 'with-coffee', 'with-juice', 'with-milk', 'with-tea', 'with-water', 'with-wine']
@@ -30,7 +29,7 @@ def predict_folder(folder_path):
     model = models.resnet50()    
     model.fc = nn.Linear(model.fc.in_features, len(CLASSES))
     if not os.path.exists(MODEL_PATH):
-        logger.info(f"Erreur : Modèle non trouve ici {MODEL_PATH}")
+        logger.info(f"Erreur : Modele non trouve ici {MODEL_PATH}")
         return
 
     model.load_state_dict(torch.load(MODEL_PATH))
@@ -60,16 +59,13 @@ def predict_folder(folder_path):
             img_path = os.path.join(folder_path, filename)
             logger.info(f"image : {filename}")
             try:
-                logger.info(f"In Try")
+                #logger.info(f"In Try")
                 img = Image.open(img_path).convert('RGB')
                 img_tensor = transform(img).unsqueeze(0).to(DEVICE)
-                #logger.info(f"Pass tensor")
 
                 output = model(img_tensor)
-                #logger.info(f"Pass output")
                 probs = F.softmax(output, dim=1)
                 conf, pred = torch.max(probs, 1)
-                #logger.info(f"Pass pred")
 
                 #logger.info(f"PREDICT --> [Image: {filename:25} | Resultat: {CLASSES[pred.item()]}]")
                 logger.info(f"  > PREDICTION : {CLASSES[pred.item()]} ({conf.item()*100:.2f}%)")

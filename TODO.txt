@@ -1,0 +1,11 @@
+TODO:
+use timm
+test with picomaster:30500/jetson-base:light
+monitoring tools for all nodes (RAM, CPU, GPU)
+tools to deply easily on k3s cluster
+send notification when job is failed, running, completed states
+send training and predictions results (via mail, ...)
+
+
+
+

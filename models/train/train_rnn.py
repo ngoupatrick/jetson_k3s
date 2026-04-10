@@ -1,13 +1,13 @@
 # script edit:
-# sudo vi /k3s-ext-1/code/scripts/train_resnet50.py
+# sudo vi /k3s-ext-1/code/scripts/train_rnn.py
 # Run this script with :
-# python3 /mnt/code/scripts/train_resnet50.py --model_path /mnt/code/models/resnet50-0676ba61.pth --data_dir /mnt/code/images --save_path /mnt/code/glass_model_resnet50.pth --epochs 3 --batch_size 4
+# python3 /mnt/code/scripts/train_rnn.py --data_dir /mnt/code/images --save_path /mnt/code/glass_model_rnn.pth --epochs 3 --batch_size 4
 
 print("-- Import libs --")
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import datasets, transforms, models
+from torchvision import datasets, transforms
 
 import time
 from datetime import datetime
@@ -16,7 +16,7 @@ import sys
 import argparse
 import os
 
-# Configuration du logging pour Kubernetes
+# Configuration for logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -24,20 +24,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# RNN Model Structure
+class ImageRNN(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes):
+        super(ImageRNN, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        out, _ = self.lstm(x, (h0, c0))
+        out = self.fc(out[:, -1, :])
+        return out
+
 def main():
-    parser = argparse.ArgumentParser(description="Script pour traiter un fichier spécifique.")
-    parser.add_argument("--model_path", type=str, default="/mnt/code/models/resnet50-0676ba61.pth", help="Model weights path.")
+    parser = argparse.ArgumentParser(description="Script to train RNN.")
     parser.add_argument("--data_dir", type=str, default="/mnt/code/images", help="Directory containing the images.")
-    parser.add_argument("--save_path", type=str, default="/mnt/code/glass_model_resnet50.pth", help="Path to save the trained model.")
+    parser.add_argument("--save_path", type=str, default="/mnt/code/glass_model_rnn.pth", help="Path to save the trained model.")
     parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs.")
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training.")
     args = parser.parse_args()
-        
-    if os.path.exists(args.model_path):
-        logger.info(f"Model weights found at {args.model_path}")
-    else:
-        logger.error(f"Model weights not found at {args.model_path}")
-        sys.exit(1)
         
     if os.path.exists(args.data_dir):
         logger.info(f"Data directory found at {args.data_dir}")
@@ -48,52 +57,46 @@ def main():
     # Configuration
     print("-- Init device --")
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    LOCAL_WEIGHTS = args.model_path
     EPOCHS = args.epochs
-    BATCH_SIZE = args.batch_size  # Reduit pour eviter OOM sur Jetson avec ResNet50
+    BATCH_SIZE = args.batch_size
     DATA_DIR = args.data_dir
     SAVE_PATH = args.save_path
     
+    # Updated RNN Specifics
+    INPUT_SIZE = 224 * 3
+    SEQ_LEN = 224
+    HIDDEN_SIZE = 256
+    NUM_LAYERS = 4
+
     logger.info(f"------ Batch Size {BATCH_SIZE}")
     logger.info(f"------ Epochs found at {EPOCHS}")
-    logger.info(f"------ Model weights {LOCAL_WEIGHTS}")
-    logger.info(f"------ Data iamges directory {DATA_DIR}")
+    logger.info(f"------ Data images directory {DATA_DIR}")
     logger.info(f"------ Save path {SAVE_PATH}")
 
-    # 1. Pretraitement
-    logger.info(f"-- Pretraitement --")
+    # 1. Preprocessing
+    logger.info(f"-- Preprocessing --")
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
-        transforms.RandomHorizontalFlip(), # Augmentation de donnees
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
     
-    # 2. Chargement des donnees
-    logger.info("-- Chargement des donnees --")
+    # 2. Data Loading
+    logger.info("-- Loading data --")
     dataset = datasets.ImageFolder(root=DATA_DIR, transform=transform)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
-    logger.info(f"Classes detectees : {dataset.class_to_idx}")
     num_classes = len(dataset.classes)
-    logger.info(f"Nombre de classes : {num_classes}")
-    # Nombre total d'images
-    total_images = len(dataset)
-    logger.info(f"Nombre total d'images : {total_images}")
+    logger.info(f"Number of classes : {num_classes}")
     
-    # 3. Modele ResNet50
-    logger.info("-- Chargement Modele ResNet50 --")
-    model = models.resnet50(pretrained=False)
-    model.load_state_dict(torch.load(LOCAL_WEIGHTS))
-    # Modifier la dernière couche pour les classes
-    model.fc = nn.Linear(model.fc.in_features, num_classes)
-    model = model.to(DEVICE)
+    # 3. RNN Model Init
+    logger.info("-- Initializing RNN Model --")
+    model = ImageRNN(input_size=INPUT_SIZE, hidden_size=HIDDEN_SIZE, num_layers=NUM_LAYERS, num_classes=num_classes).to(DEVICE)
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     
-    # 4. Boucle d'entrainement
-    logger.info("-- Debut Boucle d'entrainement --")
-    logger.info(f"Debut de l'entrainement sur {DEVICE}...")
+    # 4. Training Loop
+    logger.info("-- Start Training Loop --")
     model.train()
     
     for epoch in range(EPOCHS):
@@ -105,7 +108,8 @@ def main():
 
         for images, labels in train_loader:
             s_readable = datetime.fromtimestamp(time.time()).strftime('%H:%M:%S')
-            images, labels = images.to(DEVICE), labels.to(DEVICE)           
+            images = images.view(-1, SEQ_LEN, INPUT_SIZE).to(DEVICE)
+            labels = labels.to(DEVICE)           
 
             optimizer.zero_grad()
             outputs = model(images)
@@ -115,19 +119,24 @@ def main():
 
             running_loss += loss.item()
             
-            if i % 5 == 0: # Log tous les 5 batches pour ne pas saturer la console
+            if i % 5 == 0:
                 logger.info(f"Batch {i}, Start time {s_readable} - Loss: {loss.item():.4f} - Epoch {epoch}")
             i += 1
 
         epoch_loss = running_loss / len(train_loader)
         duration = time.time() - start_time
-        logger.info(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {epoch_loss:.4f} - Temps: {duration:.2f}s")
+        logger.info(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {epoch_loss:.4f} - Time: {duration:.2f}s")
         
-    # 5. Sauvegarde
-    logger.info(f"-- Sauvegarde {SAVE_PATH} --")
-    torch.save(model.state_dict(), SAVE_PATH)
-    logger.info(f"Modele sauvegarde dans {SAVE_PATH}")
+    # 5. Save Model and Optimizer
+    logger.info(f"-- Saving to {SAVE_PATH} --")
+    checkpoint = {
+        'epoch': EPOCHS,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'loss': epoch_loss,
+    }
+    torch.save(checkpoint, SAVE_PATH)
+    logger.info(f"Checkpoint saved in {SAVE_PATH}")
 
 if __name__ == "__main__":
-            
     main()

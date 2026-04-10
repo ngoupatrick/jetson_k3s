@@ -7,7 +7,8 @@ print("-- Import libs --")
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import datasets, transforms, models
+from torchvision import datasets, transforms
+import timm
 
 import time
 from datetime import datetime
@@ -16,7 +17,7 @@ import sys
 import argparse
 import os
 
-# Configuration du logging pour Kubernetes
+# Logging configuration for Kubernetes
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -25,7 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def main():
-    parser = argparse.ArgumentParser(description="Script pour traiter un fichier specifique.")
+    parser = argparse.ArgumentParser(description="Script to train EfficientNet-V2-M.")
     parser.add_argument("--model_path", type=str, default="/mnt/code/models/efficientnet_v2_m-dc08266a.pth", help="Model weights path.")
     parser.add_argument("--data_dir", type=str, default="/mnt/code/images", help="Directory containing the images.")
     parser.add_argument("--save_path", type=str, default="/mnt/code/glass_model_efficientnet.pth", help="Path to save the trained model.")
@@ -50,7 +51,7 @@ def main():
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     LOCAL_WEIGHTS = args.model_path
     EPOCHS = args.epochs
-    BATCH_SIZE = args.batch_size  # Reduit pour eviter OOM sur Jetson
+    BATCH_SIZE = args.batch_size
     DATA_DIR = args.data_dir
     SAVE_PATH = args.save_path
     
@@ -60,44 +61,43 @@ def main():
     logger.info(f"------ Data images directory {DATA_DIR}")
     logger.info(f"------ Save path {SAVE_PATH}")
 
-    # 1. Pretraitement
-    logger.info(f"-- Pretraitement --")
+    # 1. Preprocessing
+    logger.info(f"-- Preprocessing --")
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
-        transforms.RandomHorizontalFlip(), # Augmentation de donnees
+        transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
     
-    # 2. Chargement des donnees
-    logger.info("-- Chargement des donnees --")
+    # 2. Data Loading
+    logger.info("-- Loading data --")
     dataset = datasets.ImageFolder(root=DATA_DIR, transform=transform)
     train_loader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
-    logger.info(f"Classes detectees : {dataset.class_to_idx}")
+    logger.info(f"Classes detected : {dataset.class_to_idx}")
     num_classes = len(dataset.classes)
-    logger.info(f"Nombre de classes : {num_classes}")
-    # Nombre total d'images
+    logger.info(f"Number of classes : {num_classes}")
     total_images = len(dataset)
-    logger.info(f"Nombre total d'images : {total_images}")
+    logger.info(f"Total number of images : {total_images}")
     
-    # 3. Modele EfficientNet V2 M
-    logger.info("-- Chargement Modele EfficientNet_V2_M --")
-    model = models.efficientnet_v2_m(weights=None)
-    model.load_state_dict(torch.load(LOCAL_WEIGHTS, map_location=DEVICE))
+    # 3. EfficientNet-V2-M Model
+    logger.info("-- Loading EfficientNet-V2-M Model --")
+    # Load model structure via timm
+    model = timm.create_model('efficientnetv2_m', pretrained=False, num_classes=num_classes)
     
-    # Modifier la derniere couche (classifier pour EfficientNet)
-    # model.classifier est un Sequential, on remplace le dernier element Linear
-    in_features = model.classifier[1].in_features
-    model.classifier[1] = nn.Linear(in_features, num_classes)
+    # Load local weights
+    # Note: strict=False is used because num_classes in .pth might differ from current task
+    checkpoint = torch.load(LOCAL_WEIGHTS, map_location='cpu')
+    model.load_state_dict(checkpoint, strict=False)
     
     model = model.to(DEVICE)
     
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.0001)
     
-    # 4. Boucle d'entrainement
-    logger.info("-- Debut Boucle d'entrainement --")
-    logger.info(f"Debut de l'entrainement sur {DEVICE}...")
+    # 4. Training Loop
+    logger.info("-- Start Training Loop --")
+    logger.info(f"Starting training on {DEVICE}...")
     model.train()
     
     for epoch in range(EPOCHS):
@@ -108,6 +108,7 @@ def main():
         i = 1
 
         for images, labels in train_loader:
+            s_readable = datetime.fromtimestamp(time.time()).strftime('%H:%M:%S')
             images, labels = images.to(DEVICE), labels.to(DEVICE)           
 
             optimizer.zero_grad()
@@ -118,18 +119,18 @@ def main():
 
             running_loss += loss.item()
             
-            if i % 5 == 0: # Log tous les 5 batches pour ne pas saturer la console
-                logger.info(f"Batch {i}, Loss: {loss.item():.4f} - Epoch {epoch}")
+            if i % 5 == 0:
+                logger.info(f"Batch {i}, Start time {s_readable} - Loss: {loss.item():.4f} - Epoch {epoch}")
             i += 1
 
         epoch_loss = running_loss / len(train_loader)
         duration = time.time() - start_time
-        logger.info(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {epoch_loss:.4f} - Temps: {duration:.2f}s")
+        logger.info(f"Epoch [{epoch+1}/{EPOCHS}] - Loss: {epoch_loss:.4f} - Time: {duration:.2f}s")
         
-    # 5. Sauvegarde
-    logger.info(f"-- Sauvegarde {SAVE_PATH} --")
+    # 5. Save Model
+    logger.info(f"-- Saving to {SAVE_PATH} --")
     torch.save(model.state_dict(), SAVE_PATH)
-    logger.info(f"Modele sauvegarde dans {SAVE_PATH}")
+    logger.info(f"Model saved in {SAVE_PATH}")
 
 if __name__ == "__main__":
     main()

@@ -331,19 +331,29 @@ ansible-playbook -i ~/my_ansible/hosts.ini ~/my_ansible/playbook/hostname.yml
 ======================= STATS RESOURCES
 
 ** picomaster
-sudo apt install python3-pip -y && sudo pip3 install --no-cache-dir -U jetson-stats
+#sudo python3 -m pip uninstall jetson-stats
+sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.2.9
+sudo systemctl enable jetson_stats.service
+sudo systemctl start jetson_stats.service
+sudo systemctl enable jtop.service
+sudo systemctl start jtop.service
 
 tegrastats
-jtop (XXX)
+jtop
 
 ** picoworker --> FROM PICOMASTER
-
-ssh -t w1 "sudo apt install python3-pip -y && sudo pip3 install --no-cache-dir -U jetson-stats"
-ssh -t w2 "sudo apt install python3-pip -y && sudo pip3 install --no-cache-dir -U jetson-stats"
-ssh -t w3 "sudo apt install python3-pip -y && sudo pip3 install --no-cache-dir -U jetson-stats"
-ssh -t w4 "sudo apt install python3-pip -y && sudo pip3 install --no-cache-dir -U jetson-stats"
+# ssh -t w1 "sudo apt install python3-pip -y && sudo pip3 install --no-cache-dir -U jetson-stats"
+ssh -t w1 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.2.9 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
+ssh -t w2 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.2.9 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
+ssh -t w3 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.2.9 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
+ssh -t w4 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.2.9 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
 
 ssh w1 "tegrastats"
+
+=================== PROMETHEUS + GRAFANA MONITORING
+sudo python3 -m pip install --no-cache-dir -U  jetson-stats-node-exporter==0.0.6
+python3 -m jetson_stats_node_exporter
+
 
 =================== TEST CORE AI MODULES (ALL NODES)
 - CUDA 10.2
@@ -584,7 +594,7 @@ air-gap (isolé physiquement ou logiquement d'Internet)
 ## Production
 	https://docs.k3s.io/security/hardening-guide
 	
-### 2- INSTALL K3S (ALL NODES)
+### 3- INSTALL K3S (ALL NODES)
 0--------------------------- (all nodes)
 # check cgroups
 cat /proc/cgroups
@@ -658,7 +668,10 @@ sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
 sudo chown picocluster:picocluster ~/.kube/config
 chmod 600 ~/.kube/config
 
+# All nodes
 echo 'alias k="kubectl"' >> ~/.bashrc
+echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
 source ~/.bashrc
 
 # Installation du Plugin GPU (DaemonSet)
@@ -748,7 +761,7 @@ kubectl get nodes -o wide
 
 # etcd backup (picomaster)
 # every 5H k3s make etcd snapshots in /var/lib/rancher/k3s/server/db/snapshots
-# lister les snapshot
+# lister les snapshots
   sudo k3s etcd-snapshot list --data-dir /data
   sudo ls -lh /data/server/db/snapshots/
 # create a snapshot
@@ -768,7 +781,7 @@ sudo ip link delete cni0
 sudo ip link delete flannel.1
 sudo reboot
 
-============================ TEST GPU
+============================ TEST GPU (CUDA EXAMPLES)
 
 mkdir test-gpu
 
@@ -895,14 +908,13 @@ vi test-gpu/jetson-gpu-interactive.yaml
 -- fin code
 
 kubectl apply -f test-gpu/jetson-gpu-interactive.yaml
+
 kubectl get pods -w
 kubectl describe pod jetson-gpu-interactive
 kubectl logs jetson-gpu-interactive
         kubectl logs -f jetson-gpu-interactive # <-- IMPORTANT (look at logs until install is finished or build new image based on nvcr.io/nvidia/l4t-ml:r32.7.1-py3)
 # inside pod
 kubectl exec -it jetson-gpu-interactive -- /bin/bash
-# delete pod
-kubectl delete -f test-gpu/jetson-gpu-interactive.yaml
 
 import cv2
 import numpy as np
@@ -911,7 +923,7 @@ import pycuda.driver as cuda
 import pycuda.autoinit  # Initialise le GPU automatiquement
 
 
-======================= CLEAN
+======================= CLEAN (FREE DISK, RAM & CACHES)
 
 kubectl delete jobs --all
 kubectl delete pods --field-selector status.phase!=Running
@@ -1042,7 +1054,7 @@ sudo vi /etc/nfsmount.conf
   Wsize=1048576
 -- fin code
 
-# restart k3s-agent
+# restart k3s-agent (you can use ansible)
 sudo systemctl restart k3s-agent
 
 - association des volumes nfs avec k3s (BOTH USB)
@@ -1052,7 +1064,7 @@ sudo vi /data/server/manifests/nfs-provisioner.yaml
 ./nfs/nfs-provisioner.yaml
 -- fin code
 
-- wait a little for the helm controller to do its thing
+- wait a little bit for the helm controller to do its thing
 - check
 k get pods -n nfs
 	k delete pod -n nfs [pod_name]
@@ -1067,16 +1079,14 @@ vi test-gpu/nfs-setup.yaml
 -- fin code
 
 kubectl apply -f test-gpu/nfs-setup.yaml
+  kubectl delete -f test-gpu/nfs-setup.yaml
 kubectl get pods -w
 kubectl describe pod nginx-pod-1
 kubectl logs nginx-pod-1
 	kubectl logs -f nginx-pod-1
-	
+
 kubectl get pvc nfsclaim-1
-
 kubectl exec -it nginx-pod-1 -- /bin/bash #<-- log into a pod
-
-kubectl delete -f test-gpu/nfs-setup.yaml
 
 ====================== CREATE PERSONNAL PV & PVC (USEFULL TO STORE OUR DATA TO TRAIN)
 
@@ -1102,9 +1112,13 @@ vi ~/my-storage/my-storage.yml
 - apply yaml file
 k apply -f ~/my-storage/my-storage.yml
 
+- check
+k get storageclass -n claude-ia
+k get pv -n claude-ia
+k get pvc -n claude-ia
+
 - delete deployement
 k delete -f ~/my-storage/my-storage.yml
-
 
 ======================= PORTAINER AGENT (VISUALISATION)
 
@@ -1112,7 +1126,7 @@ k delete -f ~/my-storage/my-storage.yml
 ** on all hosts
 #sudo iptables -P FORWARD ACCEPT
 ethtool -k flannel.1 | grep tx-checksumming # <-- check first if on
-# enable flannel acces
+# enable flannel acces (only master)
 ----THIS (permanent)
 sudo vi /etc/udev/rules.d/81-flannel-offload.rules
 -- debut code
@@ -1121,11 +1135,10 @@ ACTION=="add", SUBSYSTEM=="net", KERNEL=="flannel*", RUN+="/sbin/ethtool -K $nam
 ----TEMP
 sudo ethtool -K flannel.1 tx off
 	
-
 ** on master (install)
 mkdir ~/portainer
 wget https://downloads.portainer.io/ce2-33/portainer-agent-k8s-nodeport.yaml
-cp portainer-agent-k8s-nodeport.yaml ~/portainer/
+mv portainer-agent-k8s-nodeport.yaml ~/portainer/
 kubectl apply -f ~/portainer/portainer-agent-k8s-nodeport.yaml
 
 - check install
@@ -1137,19 +1150,18 @@ kubectl logs -l app=portainer-agent -n portainer # <-- logs
 	kubectl logs -l app=portainer-agent -n portainer --tail=50 #<-- Voir les logs de l'agent Portainer (utilise le label 'app')
 	kubectl logs -l app=portainer-agent -n portainer -p #<-- Si le pod a crashé et redémarré, voir les logs de la session précédente :
 
-
-# restart agent portainer
+# restart agent pod portainer
 kubectl delete pod -n portainer -l app=portainer-agent
 
-# delete install
+# delete installed deployement
 kubectl delete -f ~/portainer/portainer-agent-k8s-nodeport.yaml
 
-** on portainer
+** Integration in portainer (on your host)
+# we assume you already installed portainer and it's able to access to [192.168.1.100]
 Name : Jetson-Cluster
 Environment URL : 192.168.1.10:30778
 
-
-=================================== ADD REGISTRIES (TO DO)
+=================================== ADD LOCAL & PRIVATE REGISTRIES (TO DO)
 urls:
 	https://docs.k3s.io/installation/private-registry
 	https://gist.github.com/edr3x/250daeaf0aa04eff871de99558faed27
@@ -1174,13 +1186,13 @@ kubectl rollout restart deployment private-registry -n registry
 k logs -f deployment/private-registry -n registry
 
 - check deployements
+# Verify the registry is running
+kubectl get pods -n registry -w
 kubectl logs -f deployment/private-registry -n registry # <-- logs of kind deployement
 # Wait for the registry pod to be ready
 kubectl wait --for=condition=ready pod -l app=registry -n registry --timeout=120s
-# Verify the registry is running
-kubectl get pods -n registry
 
-- EACH NODES: update file /etc/rancher/k3s/registries.yaml
+- (EACH NODES): update file /etc/rancher/k3s/registries.yaml
 # on workers (you can use Ansible)
 sudo mkdir -p /etc/rancher/k3s/
 # on all nodes (master + workers)
@@ -1201,7 +1213,7 @@ configs:
 # Test the registry API endpoint
 curl -s http://picomaster:30500/v2/_catalog
 
-- redemarrer k3s et agents
+- redemarrer k3s et agents (ansible also)
 sudo systemctl restart k3s
 sudo systemctl restart k3s-agent
 
@@ -1223,6 +1235,7 @@ sudo vi /etc/docker/daemon.json
 }
 -- fin ajout
 
+- restart docker (ansible - all nodes)
 sudo systemctl restart docker
 	
 - how to push image in my registries
@@ -1234,11 +1247,13 @@ docker push picomaster:30500/my-alpine:v1
 # change this [registry-registry-pvc-pvc-efd5fd02-934e-4113-8924-6de5ac2fa9d1]
 ls -R /k3s-ext-2/registry-registry-pvc-pvc-efd5fd02-934e-4113-8924-6de5ac2fa9d1/docker/registry/v2/repositories
 
-- use an image
+- use image picomaster:30500/my-alpine:v1
 vi test-gpu/pod-my-alpine.yaml
 -- debut code
 ./registry/pod-my-alpine.yaml
 -- fin code
+
+- deploy your test
 k apply -f test-gpu/pod-my-alpine.yaml
 kubectl logs pod-my-alpine # you will see kubectl logs pod-my-alpine
 
@@ -1247,25 +1262,29 @@ curl -X GET http://picomaster:30500/v2/_catalog
 curl -X GET http://picomaster:30500/v2/my-alpine/tags/list
 
 - delete an image and files
-# get digest
+# get digest first
+# this will return "sha256:.." as digest to delete
 curl -v -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
      http://picomaster:30500/v2/my-alpine/manifests/v1 2>&1 | grep Docker-Content-Digest
-# send "sha256:.." as digest to delete
+
+# use this digest to delete image
 curl -X DELETE http://picomaster:30500/v2/my-alpine/manifests/<LE_DIGEST>
-# GC: garbage collector
-k get pods -n registry # <-- get pod name <NOM_DU_POD_REGISTRY>
+
+# use GC (garbage collector) to clean registry
+k get pods -n registry # <-- get registry pod name <NOM_DU_POD_REGISTRY>
 kubectl exec -it <NOM_DU_POD_REGISTRY> -n registry -- bin/registry garbage-collect /etc/docker/registry/config.yml
-	kubectl exec -it private-registry-65cbfdcc58-bphxh -n registry -- bin/registry garbage-collect /etc/docker/registry/config.yml
+	exple:
+    kubectl exec -it private-registry-65cbfdcc58-bphxh -n registry -- bin/registry garbage-collect /etc/docker/registry/config.yml
 # check usb2 space
 df -h /k3s-ext-2
 
-============================= BUILD OUR OWN BASE IMAGE
+============================= BUILD OUR OWN BASE IMAGE (V1)
 
 # we are going to build our own image base on nvcr.io/nvidia/l4t-ml:r32.7.1-py3
-# then we are going to push in picomaster:30500/jetson-base:v1
+# see spec at the top of this page
+# then we are going to push in picomaster:30500/jetson-base:v1 in our local & private registry
 
-- Dockerfile
-
+- create Dockerfile
 vi Dockerfile
 
 -- debut code
@@ -1312,17 +1331,16 @@ docker rmi picomaster:30500/jetson-base:v1
 OR
 docker image prune -a
 
-=============================  USING OUR BASE IMAGE
+=============================  USING OUR BASE IMAGE (V1)
 
 == Exemple 6 (heavy image [picomaster:30500/jetson-base:v1, 5+Go], log in)
-# v2: digest: sha256:13c4a6838763ae15fa1fdb8cf1d982978c53e17471c0f388e7491bd43159328d size: 8517
 
-vi test-gpu/jetson-gpu-interactive-base.yaml
+vi ~/test-gpu/jetson-gpu-interactive-base.yaml
 -- debut code
 ./test-k3s-gpu/jetson-gpu-interactive-base.yaml
 -- fin code
 
-kubectl apply -f test-gpu/jetson-gpu-interactive-base.yaml
+kubectl apply -f ~/test-gpu/jetson-gpu-interactive-base.yaml
 kubectl get pods -n jetson-base -w
 kubectl describe pod jetson-gpu-interactive-base -n jetson-base
 kubectl logs jetson-gpu-interactive-base -n jetson-base
@@ -1330,91 +1348,30 @@ kubectl logs jetson-gpu-interactive-base -n jetson-base
 # inside pod
 kubectl exec -it jetson-gpu-interactive-base -n jetson-base -- /bin/bash
 # delete pod
-kubectl delete -f test-gpu/jetson-gpu-interactive-base.yaml
+kubectl delete -f ~/test-gpu/jetson-gpu-interactive-base.yaml
 
 - Exple 1: get cuda infos
 kubectl exec -it jetson-gpu-interactive-base -n jetson-base -- /bin/bash
 nano /data/test1.py
 -- debut code
-# 0. Test PyTorch + CUDA
-print("--- Test PyTorch + CUDA ---")
-print("import torch ...")
-import torch
-# 1. Test PyTorch + CUDA
-print("--- Verification PyTorch ---")
-cuda_available = torch.cuda.is_available()
-print(f"CUDA disponible : {cuda_available}")
-if cuda_available:
-    print(f"Nom du GPU : {torch.cuda.get_device_name(0)}")
-    print(f"Nombre de GPU detectes : {torch.cuda.device_count()}")
-    # Test de calcul simple sur GPU
-    x = torch.tensor([1.0, 2.0]).cuda()
-    print(f"Test calcul GPU reussi : {x.device}")
-else:
-    print("ERREUR : CUDA n'est pas detecte par PyTorch.")
+./test-k3s-gpu/python/test1.py
 -- fin code
 
-- run
+- run example 1
 python3 /data/test1.py
 
 - Exple 2: cuda gpu compute
 kubectl exec -it jetson-gpu-interactive-base -n jetson-base -- /bin/bash
 nano /data/test2.py
+
 -- debut code
-
-# 0. Test PyTorch + CUDA
-print("--- Test PyTorch + CUDA ---")
-print("import torch ...")
-
-import torch
-import time
-
-# 1. Verification de la disponibilite de CUDA
-if not torch.cuda.is_available():
-    print("Erreur : CUDA n'est pas detecte. Verifiez votre installation PyTorch pour Jetson.")
-    exit()
-
-device = torch.device("cuda")
-print(f"Appareil utilise : {torch.cuda.get_device_name(0)}")
-
-# 2. Creation de deux grandes matrices (ex: 3000x3000)
-size = 3000
-cpu_a = torch.randn(size, size)
-cpu_b = torch.randn(size, size)
-
-# --- TEST SUR CPU ---
-start_cpu = time.time()
-cpu_res = torch.matmul(cpu_a, cpu_b)
-end_cpu = time.time()
-print(f"Temps CPU : {end_cpu - start_cpu:.4f} secondes")
-
-# --- TEST SUR GPU (Jetson CUDA) ---
-# Transfert des donnees vers le GPU
-gpu_a = cpu_a.to(device)
-gpu_b = cpu_b.to(device)
-
-# "Prechauffage" du GPU (important pour les mesures de temps)
-_ = torch.matmul(gpu_a, gpu_b)
-torch.cuda.synchronize()
-
-start_gpu = time.time()
-gpu_res = torch.matmul(gpu_a, gpu_b)
-# On attend que le GPU finisse le calcul avant de stopper le chrono
-torch.cuda.synchronize() 
-end_gpu = time.time()
-
-print(f"Temps GPU : {end_gpu - start_gpu:.4f} secondes")
-
-# 3. Calcul de l'acceleration
-speedup = (end_cpu - start_cpu) / (end_gpu - start_gpu)
-print(f"\nLe GPU est {speedup:.1f}x plus rapide que le CPU sur ce calcul !")
-
+./test-k3s-gpu/python/test2.py
 -- fin code
 - run
 python3 /data/test2.py
 
-
 ============================= TRAIN MODELS (GLASS CLASSIFICATION)
+
 # urls images:
 	empty:
 		https://pixabay.com/photos/search/empty%20glasses/
@@ -1435,6 +1392,7 @@ python3 /data/test2.py
 		https://pixabay.com/photos/search/cup%20water/
 	with-wine
 		https://pixabay.com/photos/search/cup%20glass%20wine/
+
 - structure
 
 /k3s-ext-1/code/
@@ -1469,6 +1427,17 @@ sudo mv mobilenet_v3_large-5c1a4163.pth /k3s-ext-1/code/models
 sudo mv efficientnet_v2_m-dc08266a.pth /k3s-ext-1/code/models
 sudo mv convnext_tiny-983f1562.pth /k3s-ext-1/code/models
 
+- OR use script version (on master)
+mkdir -p ~/my-scripts
+vi ~/my-scripts/init-k3s-ext-1.sh
+-- debut code
+./my-scripts/init-k3s-ext-1.sh
+-- fin code
+chmod +x ~/my-scripts/init-k3s-ext-1.sh
+echo "picocluster" > ~/my-scripts/.pass && chmod 600 ~/my-scripts/.pass
+# run
+sh ~/my-scripts/init-k3s-ext-1.sh
+
 - nfs accessibility
 sudo vi /etc/exports
 -- add
@@ -1501,7 +1470,7 @@ k apply -f ~/test-gpu/n-claude.yaml
 vi ~/test-gpu/job-claude-train-resnet50.yaml
 
 -- debut code
-./models/yaml/job-claude-train-resnet50.yaml
+./models/yaml/train/job-claude-train-resnet50.yaml
 -- fin code
 
 k logs -f job/job-claude-train-resnet50 -n claude-ia
@@ -1511,7 +1480,7 @@ sudo vi /k3s-ext-1/code/scripts/train_mobilenet.py # <-- ADD PYTHON CODE (./mode
 vi ~/test-gpu/job-claude-train-mobilenet.yaml # <-- Add yaml bellow
 
 -- debut code
-./models/yaml/job-claude-train-mobilenet.yaml
+./models/yaml/train/job-claude-train-mobilenet.yaml
 -- fin code
 
 k apply -f ~/test-gpu/job-claude-train-mobilenet.yaml
@@ -1522,21 +1491,19 @@ k logs -f [pod_name] -n claude-ia
   kubectl logs -f -l job-name=job-claude-train-mobilenet -n claude-ia
 k describe pod [pod_name] -n registry
 
-
 - job to predict (job-claude-predict-resnet50.yaml)
 vi ~/test-gpu/job-claude-predict-resnet50.yaml
 
 -- debut code
-./models/yaml/job-claude-predict-resnet50.yaml
+./models/yaml/predict/job-claude-predict-resnet50.yaml
 -- fin code
 
-- DEPLOYEMENT
+- DEPLOYEMENT TRAIN & PREDICT
 # 1. (ON HOST) copy images & test folder from your host to picomaster
 scp -r ~/Bureau/images picomaster:~/images
 scp -r ~/Bureau/test picomaster:~/test
 
 # 2. (ON MASTER) copy test & images folder to /k3s-ext-1/code/
-
 sudo mv ~/images /k3s-ext-1/code/images
 sudo mv ~/test /k3s-ext-1/code/test
 
@@ -1546,17 +1513,18 @@ k get ns
 
 # 4. (ON MASTER) deploy train job
 k apply -f ~/test-gpu/job-claude-train-resnet50.yaml
-	kubectl delete job job-claude-train-resnet50 -n claude-ia --force --grace-period=0
+	k delete job job-claude-train-resnet50 -n claude-ia --force --grace-period=0
 
 k get pods -n claude-ia
 
-kubectl get pods -l job-name=job-claude-predict-resnet50 -n claude-ia
-	kubectl get pods -l job-name=job-claude-predict-resnet50  -n claude-ia -o wide
-	kubectl get jobs job-claude-predict-resnet50 -n claude-ia -w
-kubectl logs -l job-name=job-claude-predict-resnet50  -n claude-ia
+k get pods -l job-name=job-claude-predict-resnet50 -n claude-ia
+	k get pods -l job-name=job-claude-predict-resnet50  -n claude-ia -o wide
+	k get jobs job-claude-predict-resnet50 -n claude-ia -w
+k logs -l job-name=job-claude-predict-resnet50  -n claude-ia
 
 # 5. (ON MASTER) deploy predict job [!!!! WAIT UNTIL TRAIN IS FINISH]
 k apply -f ~/test-gpu/job-claude-predict-resnet50.yaml
+  k delete -f ~/test-gpu/job-claude-predict-resnet50.yaml
 
 # X. Tricky
 sudo find /k3s-ext-1/code/images -name ".*" -delete
@@ -1566,16 +1534,39 @@ sudo rm -rf /k3s-ext-1/code/scripts/predict_resnet50.py
 echo "" > ~/test-gpu/job-claude-predict-resnet50.yaml
 echo "" > ~/test-gpu/job-claude-train-resnet50.yaml
 
-
 # X. delete all
 k delete -f ~/test-gpu/job-claude-predict-resnet50.yaml
 k apply -f ~/test-gpu/job-claude-train-resnet50.yaml
 k apply -f ~/test-gpu/n-claude.yaml
 
+============================== TEST TRAIN & PREDICT WITH LIGHT IMAGE
 
+# image: picomaster:30500/jetson-base:light
 
+- create k3s jobs yaml files (train, predict)
+vi ~/test-gpu/job-claude-train-resnet50-light.yaml
+-- debut code
+./models/yaml_light/train/job-claude-train-resnet50-light.yaml
+-- fin code
 
-============================== TEST AND OUTPUTS EXPLAIN
+vi ~/test-gpu/job-claude-predict-resnet50-light.yaml
+-- debut code
+./models/yaml_light/predict/job-claude-predict-resnet50-light.yaml
+-- fin code
+
+- deploy train job & check
+k apply -f ~/test-gpu/job-claude-train-resnet50-light.yaml
+  k delete -f ~/test-gpu/job-claude-train-resnet50-light.yaml
+k get pods -n claude-ia -w # <-- wait until RUNNING state
+k logs -f job/job-claude-train-resnet50-light -n claude-ia
+
+- deploy predict job & check
+k apply -f ~/test-gpu/job-claude-predict-resnet50-light.yaml
+  k delete -f ~/test-gpu/job-claude-predict-resnet50-light.yaml
+k get pods -n claude-ia -w # <-- wait until RUNNING state
+k logs -f job/job-claude-predict-resnet50-light -n claude-ia
+
+============================== EXTRAS: TEST AND OUTPUTS EXPLAIN
 
 - TensorRT 8.2 (Inférence IA)
 # folder /usr/src/tensorrt/

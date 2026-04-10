@@ -1,3 +1,0 @@
-TODO:
-use timm
-test with picomaster:30500/jetson-base:light
