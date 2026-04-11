@@ -1,0 +1,16 @@
+[Unit]
+Description=Prometheus Federation Proxy
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=root
+Type=simple
+ExecStart=/usr/local/bin/prometheus \
+    --config.file=/etc/prometheus/prometheus.yml \
+    --storage.tsdb.path=/var/lib/prometheus/ \
+    --storage.tsdb.retention.time=1h \
+    --web.listen-address=:9090
+
+[Install]
+WantedBy=multi-user.target

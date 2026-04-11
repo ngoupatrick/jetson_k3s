@@ -328,31 +328,296 @@ vi ~/my_ansible/playbook/hostname.yml
 ansible-playbook -i ~/my_ansible/hosts.ini ~/my_ansible/playbook/hostname.yml
 	ansible-playbook ~/my_ansible/playbook/hostname.yml
 
-======================= STATS RESOURCES
+======================= STATS RESOURCES INSTALLATION TOOLS
 
-** picomaster
-#sudo python3 -m pip uninstall jetson-stats
-sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.2.9
-sudo systemctl enable jetson_stats.service
-sudo systemctl start jetson_stats.service
-sudo systemctl enable jtop.service
-sudo systemctl start jtop.service
+** picomaster and all workers
+# remove all packages
+sudo python3 -m pip uninstall -y jetson-stats jetson-stats-node-exporter prometheus-client
 
+# download wheel file
+curl -L -C - \
+https://github.com/laminair/jetson_stats_node_exporter/releases/download/0.0.2/jetson_stats_node_exporter-0.0.2-py3-none-any.whl \
+-o jetson_stats_node_exporter-0.0.2-py3-none-any.whl
+
+# install packages
+sudo python3 -m pip install --no-cache-dir -U jetson_stats_node_exporter-0.0.2-py3-none-any.whl
+
+# cleaning
+rm jetson_stats_node_exporter-0.0.2-py3-none-any.whl
+
+# installed packages
+python3 -m pip list | less # <-- list of packages installed
+# jetson-stats                  3.1.4
+# jetson-stats-node-exporter    0.0.2
+# prometheus-client             0.15.0
+# psutil                        5.9.4 (don't remove)
+# schedule                      1.0.0 (don't remove)
+
+
+# test installation
 tegrastats
 jtop
+python3 -m jetson_stats_node_exporter
 
-** picoworker --> FROM PICOMASTER
-# ssh -t w1 "sudo apt install python3-pip -y && sudo pip3 install --no-cache-dir -U jetson-stats"
-ssh -t w1 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.2.9 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
-ssh -t w2 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.2.9 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
-ssh -t w3 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.2.9 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
-ssh -t w4 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.2.9 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
+# deploy as a service (all nodes)
+sudo vi /etc/systemd/system/jetson-exporter.service
+-- debut code
+./monitoring/jetson-exporter.service
+-- fin code
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now jetson-exporter
+
+# ** picoworker --> (!!!! NOT USED) FROM PICOMASTER
+# ssh -t w1 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.0.0 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
+# ssh -t w2 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.0.0 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
+# ssh -t w3 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.0.0 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
+# ssh -t w4 "sudo apt install python3-pip -y && sudo python3 -m pip install --no-cache-dir -U jetson-stats==4.0.0 && sudo systemctl enable jetson_stats.service && sudo systemctl enable jtop.service"
 
 ssh w1 "tegrastats"
 
 =================== PROMETHEUS + GRAFANA MONITORING
-sudo python3 -m pip install --no-cache-dir -U  jetson-stats-node-exporter==0.0.6
-python3 -m jetson_stats_node_exporter
+
+## Adding metrics collector for hosts CPU, RAM, GPU, TEMPERATURE, ...
+# make sure to deploy jetson-exporter.service on all nodes (see above)
+sudo systemctl status jetson-exporter
+curl -s http://picomaster:9100/metrics | grep gpu
+
+
+## (ON MASTER) Adding metrics collector for k3s cluster (only on picomaster)
+# create an python3 env
+sudo apt-get install -y python3-venv
+mkdir -p ~/k3s_monitor_env
+chown $(whoami):$(whoami) ~/k3s_monitor_env
+python3 -m venv ~/k3s_monitor_env/venv
+
+# create a requirements.txt file
+vi ~/k3s_monitor_env/requirements.txt
+-- debut code
+prometheus-client==0.15.0
+kubernetes==24.2.0
+-- fin code
+
+# upgrade pip and install packages
+~/k3s_monitor_env/venv/bin/python3 -m pip install --no-cache-dir --upgrade pip
+~/k3s_monitor_env/venv/bin/python3 -m pip install --no-cache-dir -r ~/k3s_monitor_env/requirements.txt
+
+# check that python packages kubernetes and prometheus_client are installed
+~/k3s_monitor_env/venv/bin/python -m pip list | grep kubernetes
+~/k3s_monitor_env/venv/bin/python -m pip list | grep prometheus-client
+
+# if python package kubernetes not installed, here is the procedure
+# urls:
+#   https://github.com/kubernetes-client/python/?tab=readme-ov-file
+#   https://github.com/kubernetes-client/python/blob/master/kubernetes/README.md
+# urls examples (Inspirations):
+#   https://github.com/kubernetes-client/python/tree/master/examples
+
+# test install
+vi ~/k3s_monitor_env/test_kubernetes.py
+-- debut code
+./monitoring/test_kubernetes.py
+-- fin code
+
+vi ~/k3s_monitor_env/test_kubernetes_watch.py
+-- debut code
+./monitoring/test_kubernetes_watch.py
+-- fin code
+
+~/k3s_monitor_env/venv/bin/python ~/k3s_monitor_env/test_kubernetes.py
+~/k3s_monitor_env/venv/bin/python ~/k3s_monitor_env/test_kubernetes_watch.py
+
+# (ON MASTER) script use to collect jobs states (later we can add, pods, deployements, ...)
+vi ~/k3s_monitor_env/k3s_job_watcher.py
+-- debut code
+./monitoring/k3s_job_watcher.py
+-- fin code
+
+# deploy k3s_job_watcher.py as a service, use to produce jobs status
+sudo vi /etc/systemd/system/k3s-job-watcher.service
+-- debut code
+./monitoring/k3s-job-watcher.service
+-- fin code
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now k3s-job-watcher
+sudo systemctl status k3s-job-watcher
+
+# test service if it's return job metrics
+curl -s http://picomaster:9101/metrics | grep k3s_job_status
+
+## Mini prometheus Federator
+# urls:
+#   https://github.com/prometheus/prometheus/releases
+#   https://github.com/prometheus/prometheus/releases/download/v2.45.2/prometheus-2.45.2.linux-arm64.tar.gz
+
+# install mini prometheus
+curl -L -C - \
+https://github.com/prometheus/prometheus/releases/download/v2.45.2/prometheus-2.45.2.linux-arm64.tar.gz \
+-o prometheus-2.45.2.linux-arm64.tar.gz
+
+tar xvf prometheus-2.45.2.linux-arm64.tar.gz
+sudo mv prometheus-2.45.2.linux-arm64/prometheus /usr/local/bin/
+sudo mv prometheus-2.45.2.linux-arm64/promtool /usr/local/bin/
+sudo mkdir -p /etc/prometheus /var/lib/prometheus
+
+# clean
+rm -rf prometheus-2.45.2.linux-arm64.tar.gz prometheus-2.45.2.linux-arm64
+
+# config prometheus yaml file
+sudo vi /etc/prometheus/prometheus.yml
+
+-- debut code
+./monitoring/prometheus.yml
+-- fin code
+
+# config service
+sudo vi /etc/systemd/system/prometheus.service
+-- debut code
+./monitoring/prometheus.service
+-- fin code
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now prometheus
+sudo systemctl status prometheus
+
+# (ON MYHOST), test
+# test first that your able to retrieve metrics from picomaster
+# get metrics from picomaster (command line)
+curl -G 'http://picomaster:9090/api/v1/query' --data-urlencode 'query=k3s_job_status'
+curl -G 'http://picomaster:9090/api/v1/query' --data-urlencode 'query=temperature_C{instance="@IP_S1:9100"}'
+
+# get metrics from picomaster (web browser)
+1- open browser: http://picomaster:9090
+2- Graph panel
+3- find "temperature_C{statistic="CPU"}" -> Execute
+
+# list hosts and check if picomaster is able to get metrics
+http://picomaster:9090/targets
+
+## (ON MYHOST) Deploy Docker (docker run or docker compose) prometheus+grafana
+
+# after deployement of myhost
+curl -G http://picomaster:9090/federate --data-urlencode 'match[]={job=~".+"}' | head -n 20
+
+# test in browser after install on myhost
+1- open browser: http://picomaster:9090
+2- Status > Targets
+3- look at 'federated-jetson'
+
+
+
+#### on myhost
+
+-- prometheus.yml # were are my metrics producer (picomaster:9090) -> send to (localhost:9093/federate)
+scrape_configs:
+  - job_name: 'federated-jetson'
+    honor_labels: true
+    metrics_path: '/federate'
+    params:
+      'match[]':
+        - '{job=~".+"}'
+    static_configs:
+      - targets: ['picomaster:9090']
+
+rule_files:
+  - "alert_rules.yml"
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['localhost:9093']
+
+
+
+-- alert_rules.yml # what alerts do we want
+groups:
+- name: jetson_alerts
+  rules:
+  - alert: JobFailed
+    expr: k3s_job_status == 0
+    for: 1m
+    annotations:
+      summary: "Job {{ $labels.job_name }} échoué"
+
+  - alert: HighTemp
+    expr: temperature_C{statistic="GPU"} > 80
+    for: 2m
+    annotations:
+      summary: "Surchauffe sur {{ $labels.instance }}"
+
+  # --- ALERTES GPU ---
+  - alert: JetsonGPULimitReached
+    # Alerte si la fréquence actuelle est proche de la fréquence max
+    expr: gpu_utilization_percentage_Hz{nvidia_gpu="freq"} >= gpu_utilization_percentage_Hz{nvidia_gpu="max_freq"} * 0.95
+    for: 5m
+    annotations:
+      summary: "GPU à pleine puissance sur {{ $labels.instance }}"
+      description: "La fréquence GPU est au maximum, indiquant une charge de calcul intensive."
+
+  # --- ALERTES RAM (Système) ---
+  - alert: JetsonHighRamUsage
+    # Calcul : (utilisée / totale) * 100
+    expr: (ram_kB{statistic="used"} / ram_kB{statistic="total"}) * 100 > 85
+    for: 5m
+    annotations:
+      summary: "RAM saturée (>85%) sur {{ $labels.instance }}"
+      description: "La mémoire système est presque pleine, risque d'OOM Kill pour les pods K3s."
+
+  - alert: JetsonHighSharedMemory
+    # Alerte sur la mémoire partagée (souvent utilisée par les buffers graphiques/GPU)
+    expr: (ram_kB{statistic="shared"} / ram_kB{statistic="total"}) * 100 > 30
+    for: 10m
+    annotations:
+      summary: "Mémoire partagée élevée sur {{ $labels.instance }}"
+      description: "La RAM partagée dépasse 30%, vérifiez les fuites mémoire dans les applications GPU."
+
+  # --- ALERTES IRAM (Internal RAM GPU) ---
+  - alert: JetsonHighIRamUsage
+    # Calcul : (utilisée / totale) * 100 pour l'IRAM Maxwell
+    expr: (iram_kB{nvidia_gpu="used",statistic="Nvidia Maxwell"} / iram_kB{nvidia_gpu="total",statistic="Nvidia Maxwell"}) * 100 > 90
+    for: 2m
+    annotations:
+      summary: "IRAM GPU saturée sur {{ $labels.instance }}"
+      description: "La mémoire interne Maxwell est à plus de 90%. Risque de ralentissement majeur des modèles IA."
+
+  # --- ALERTES DISPONIBILITÉ ET REBOOT ---
+  - alert: JetsonNodeDown
+    # Alerte si la métrique n'est plus reçue (le nœud ne répond plus)
+    expr: absent(uptime_s{statistic="alive"})
+    for: 2m
+    annotations:
+      summary: "Nœud {{ $labels.instance }} injoignable"
+      description: "L'exportateur sur le nœud ne répond plus depuis 2 minutes."
+
+  - alert: JetsonRecentlyRebooted
+    # Alerte si l'uptime est inférieur à 5 minutes (vient de redémarrer)
+    expr: uptime_s{statistic="alive"} < 300
+    for: 1m
+    annotations:
+      summary: "Nœud {{ $labels.instance }} a redémarré"
+      description: "Le système vient de redémarrer. Uptime actuel : {{ $value }} secondes."
+
+
+-- alertmanager.yml # pushing notifications
+route:
+  receiver: 'slack-notifications'
+
+receivers:
+- name: 'slack-notifications'
+  slack_configs:
+  - api_url: 'https://slack.com'
+    channel: '#alerts'
+    text: "Alerte : {{ .CommonAnnotations.summary }}"
+  email_configs:
+  - to: 'votre@email.com'
+    from: 'admin@myhost.com'
+    smarthost: '://gmail.com'
+    auth_password: 'votre_app_password'
+
+-- GRAFANA dashboard
+https://grafana.com/grafana/dashboards/21727-nvidia-jetson/
+https://oneuptime.com/blog/post/2026-02-02-k3s-monitoring/view
+https://blog.alphabravo.io/part-5-k3s-zero-to-hero-advanced-k3s-management-monitoring-scaling-and-upgrades/
 
 
 =================== TEST CORE AI MODULES (ALL NODES)
@@ -994,13 +1259,13 @@ lsblk -f
 sda                                                                 
 └─sda1       ext4   k3s-ext-2  ed66565f-ef38-4865-900a-dd3b6ec07566 
 sdb                                                                 
-└─sdb1       ext4   k3s-ext-1  ba785677-0fbc-4102-9bad-950581ebca5f
+└─sdb1       ext4   k3s-ext-1  553ca602-206a-44a3-b304-5134d3f34bca
 
 - edit /etc/fstab
 sudo vi /etc/fstab
 -- debut code
-UUID=54e54abe-7f68-4496-b62a-66d919bd69e4  /k3s-ext-1  ext4  defaults,nofail  0  2
-UUID=932933f6-b8ec-4c7b-b982-a717d22f6c26  /k3s-ext-2  ext4  defaults,nofail  0  2
+UUID=553ca602-206a-44a3-b304-5134d3f34bca  /k3s-ext-1  ext4  defaults,nofail  0  2
+UUID=ed66565f-ef38-4865-900a-dd3b6ec07566  /k3s-ext-2  ext4  defaults,nofail  0  2
 -- fin code
 
 -  create folders
@@ -1011,6 +1276,7 @@ sudo mount /k3s-ext-1
 	sudo umount /k3s-ext-1
 sudo mount /k3s-ext-2
 	sudo umount /k3s-ext-1
+systemctl daemon-reload
 
 - checks mounting
 df -h

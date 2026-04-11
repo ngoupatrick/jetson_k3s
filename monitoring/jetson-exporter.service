@@ -1,0 +1,16 @@
+[Unit]
+Description=Jetson Stats Node Exporter
+After=network.target
+
+[Service]
+# Type=exec
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 -m jetson_stats_node_exporter --port 9100
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=K3s Job Status Exporter
+After=network.target
+
+[Service]
+Type=simple
+User=picocluster
+
+WorkingDirectory=/home/picocluster
+Environment=KUBECONFIG=/home/picocluster/.kube/config
+
+# Chemin vers l'env virtuel et le script
+ExecStart=/home/picocluster/k3s_monitor_env/venv/bin/python3 /home/picocluster/k3s_monitor_env/k3s_job_watcher.py
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target

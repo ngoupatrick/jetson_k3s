@@ -1,0 +1,94 @@
+# metrics grabs
+# curl -s http://picoworker2:9100/metrics
+
+# output -->
+
+# HELP python_gc_objects_collected_total Objects collected during gc
+# TYPE python_gc_objects_collected_total counter
+python_gc_objects_collected_total{generation="0"} 365.0
+python_gc_objects_collected_total{generation="1"} 7.0
+python_gc_objects_collected_total{generation="2"} 0.0
+# HELP python_gc_objects_uncollectable_total Uncollectable object found during GC
+# TYPE python_gc_objects_uncollectable_total counter
+python_gc_objects_uncollectable_total{generation="0"} 0.0
+python_gc_objects_uncollectable_total{generation="1"} 0.0
+python_gc_objects_uncollectable_total{generation="2"} 0.0
+# HELP python_gc_collections_total Number of times this generation was collected
+# TYPE python_gc_collections_total counter
+python_gc_collections_total{generation="0"} 62.0
+python_gc_collections_total{generation="1"} 5.0
+python_gc_collections_total{generation="2"} 0.0
+# HELP python_info Python platform information
+# TYPE python_info gauge
+python_info{implementation="CPython",major="3",minor="6",patchlevel="9",version="3.6.9"} 1.0
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 2.57499136e+08
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 2.3400448e+07
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.77590877391e+09
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 3.19
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 8.0
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 1024.0
+# HELP cpu_Hz CPU Statistics from Jetson Stats (ARMv8 Processor rev 1 (v8l))
+# TYPE cpu_Hz gauge
+cpu_Hz{core="1",statistic="freq"} 403000.0
+cpu_Hz{core="1",statistic="min_freq"} 102000.0
+cpu_Hz{core="1",statistic="max_freq"} 1.479e+06
+cpu_Hz{core="1",statistic="val"} 20.0
+cpu_Hz{core="2",statistic="freq"} 403000.0
+cpu_Hz{core="2",statistic="min_freq"} 102000.0
+cpu_Hz{core="2",statistic="max_freq"} 1.479e+06
+cpu_Hz{core="2",statistic="val"} 18.0
+cpu_Hz{core="3",statistic="freq"} 403000.0
+cpu_Hz{core="3",statistic="min_freq"} 102000.0
+cpu_Hz{core="3",statistic="max_freq"} 1.479e+06
+cpu_Hz{core="3",statistic="val"} 14.0
+cpu_Hz{core="4",statistic="freq"} 403000.0
+cpu_Hz{core="4",statistic="min_freq"} 102000.0
+cpu_Hz{core="4",statistic="max_freq"} 1.479e+06
+cpu_Hz{core="4",statistic="val"} 20.0
+# HELP gpu_utilization_percentage_Hz GPU Statistics from Jetson Stats
+# TYPE gpu_utilization_percentage_Hz gauge
+gpu_utilization_percentage_Hz{nvidia_gpu="freq",statistic="Nvidia Maxwell"} 76000.0
+gpu_utilization_percentage_Hz{nvidia_gpu="min_freq",statistic="Nvidia Maxwell"} 7.68e+07
+gpu_utilization_percentage_Hz{nvidia_gpu="max_freq",statistic="Nvidia Maxwell"} 9.216e+08
+# HELP ram_kB Memory Statistics from Jetson Stats (unit: kB)
+# TYPE ram_kB gauge
+ram_kB{statistic="total"} 4.059236e+06
+ram_kB{statistic="used"} 615168.0
+ram_kB{statistic="shared"} 76.0
+# HELP iram_kB Video Memory Statistics from Jetson Stats (unit: kB)
+# TYPE iram_kB gauge
+iram_kB{nvidia_gpu="used",statistic="Nvidia Maxwell"} 0.0
+iram_kB{nvidia_gpu="total",statistic="Nvidia Maxwell"} 252.0
+# HELP swap_MB Swap Statistics from Jetson Stats (unit: MB)
+# TYPE swap_MB gauge
+swap_MB{statistic="total"} 1982.0
+swap_MB{statistic="used"} 0.0
+swap_MB{statistic="cached"} 0.0
+# HELP temperature_C Temperature Statistics from Jetson Stats (unit: °C)
+# TYPE temperature_C gauge
+temperature_C{statistic="PLL"} 23.5
+temperature_C{statistic="CPU"} 26.5
+temperature_C{statistic="GPU"} 25.5
+temperature_C{statistic="AO"} 33.5
+temperature_C{statistic="thermal"} 26.25
+# HELP disk_GB Local Storage Statistics from Jetson Stats (unit: GB)
+# TYPE disk_GB gauge
+disk_GB{mountpoint="total"} 31.264354304
+disk_GB{mountpoint="used"} 13.52302592
+disk_GB{mountpoint="free"} 16.31172608
+disk_GB{mountpoint="percent"} 4.5299999999999995e-08
+# HELP uptime_s Machine Uptime Statistics from Jetson Stats
+# TYPE uptime_s gauge
+uptime_s{statistic="alive"} 2669.21
