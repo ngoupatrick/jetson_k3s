@@ -1,0 +1,14 @@
+route:
+  receiver: 'slack-notifications'
+
+receivers:
+- name: 'slack-notifications'
+  slack_configs:
+  - api_url: 'https://slack.com'
+    channel: '#alerts'
+    text: "Alerte : {{ .CommonAnnotations.summary }}"
+  email_configs:
+  - to: 'votre@email.com'
+    from: 'admin@myhost.com'
+    smarthost: '://gmail.com'
+    auth_password: 'votre_app_password'

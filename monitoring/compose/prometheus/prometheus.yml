@@ -1,0 +1,24 @@
+scrape_configs:
+  - job_name: 'federated-jetson'
+    honor_labels: true
+    metrics_path: '/federate'
+    params:
+      'match[]':
+        - '{job=~".+"}'
+    static_configs:
+      - targets: ['picomaster:9090']
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '([^:]+):.*'      # Capture tout ce qui est avant le ":"
+        target_label: instance   # Remplace le label instance
+        replacement: '${1}'      # Garde uniquement la capture (S1)
+      - source_labels: [instance]
+        target_label: instance
+        action: lowercase        # Transforme "S1" en "s1"
+
+rule_files:
+  - "/etc/prometheus/alert.rules.yml"
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']

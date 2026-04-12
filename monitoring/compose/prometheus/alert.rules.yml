@@ -1,0 +1,80 @@
+groups:
+- name: jetson_alerts
+  rules:
+  # Calcul de la moyenne CPU (Métrique simplifiée)
+  - record: jetson:cpu_hz:avg
+    expr: avg by (instance, job) (cpu_Hz{statistic="val", core=~"1|2|3|4"})
+
+  # Alerte CPU élevé
+  - alert: JetsonHighCpuUsage
+    expr: jetson:cpu_hz:avg > 1400000000
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "CPU saturé sur {{ $labels.instance }}"
+      description: "Moyenne CPU à {{ $value | humanize }}Hz depuis 5 min."
+
+  - alert: JobFailed
+    expr: k3s_job_status == 0
+    for: 1m
+    annotations:
+      summary: "Job {{ $labels.job_name }} échoué"
+
+  - alert: HighTemp
+    expr: temperature_C{statistic="GPU"} > 80
+    for: 2m
+    annotations:
+      summary: "Surchauffe sur {{ $labels.instance }}"
+
+  # --- ALERTES GPU ---
+  - alert: JetsonGPULimitReached
+    # Alerte si la fréquence actuelle est proche de la fréquence max
+    expr: gpu_utilization_percentage_Hz{nvidia_gpu="freq"} >= gpu_utilization_percentage_Hz{nvidia_gpu="max_freq"} * 0.95
+    for: 5m
+    annotations:
+      summary: "GPU à pleine puissance sur {{ $labels.instance }}"
+      description: "La fréquence GPU est au maximum, indiquant une charge de calcul intensive."
+
+  # --- ALERTES RAM (Système) ---
+  - alert: JetsonHighRamUsage
+    # Calcul : (utilisée / totale) * 100
+    expr: (ram_kB{statistic="used"} / ram_kB{statistic="total"}) * 100 > 85
+    for: 5m
+    annotations:
+      summary: "RAM saturée (>85%) sur {{ $labels.instance }}"
+      description: "La mémoire système est presque pleine, risque d'OOM Kill pour les pods K3s."
+
+  - alert: JetsonHighSharedMemory
+    # Alerte sur la mémoire partagée (souvent utilisée par les buffers graphiques/GPU)
+    expr: (ram_kB{statistic="shared"} / ram_kB{statistic="total"}) * 100 > 30
+    for: 10m
+    annotations:
+      summary: "Mémoire partagée élevée sur {{ $labels.instance }}"
+      description: "La RAM partagée dépasse 30%, vérifiez les fuites mémoire dans les applications GPU."
+
+  # --- ALERTES IRAM (Internal RAM GPU) ---
+  - alert: JetsonHighIRamUsage
+    # Calcul : (utilisée / totale) * 100 pour l'IRAM Maxwell
+    expr: (iram_kB{nvidia_gpu="used",statistic="Nvidia Maxwell"} / iram_kB{nvidia_gpu="total",statistic="Nvidia Maxwell"}) * 100 > 90
+    for: 2m
+    annotations:
+      summary: "IRAM GPU saturée sur {{ $labels.instance }}"
+      description: "La mémoire interne Maxwell est à plus de 90%. Risque de ralentissement majeur des modèles IA."
+
+  # --- ALERTES DISPONIBILITÉ ET REBOOT ---
+  - alert: JetsonNodeDown
+    # Alerte si la métrique n'est plus reçue (le nœud ne répond plus)
+    expr: absent(uptime_s{statistic="alive"})
+    for: 2m
+    annotations:
+      summary: "Nœud {{ $labels.instance }} injoignable"
+      description: "L'exportateur sur le nœud ne répond plus depuis 2 minutes."
+
+  - alert: JetsonRecentlyRebooted
+    # Alerte si l'uptime est inférieur à 5 minutes (vient de redémarrer)
+    expr: uptime_s{statistic="alive"} < 300
+    for: 1m
+    annotations:
+      summary: "Nœud {{ $labels.instance }} a redémarré"
+      description: "Le système vient de redémarrer. Uptime actuel : {{ $value }} secondes."

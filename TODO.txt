@@ -16,45 +16,14 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" sh -s - serve
   --docker \
   --write-kubeconfig-mode 644
 
-chec urls http://picomaster:9090/flags
-add specialy:
-    --web.console.libraries=console_libraries
-    --web.console.templates=consoles
-
-tar xvf prometheus-2.45.2.linux-arm64.tar.gz
-# sudo mkdir -p /etc/prometheus /var/lib/prometheus
-sudo mv prometheus-2.45.2.linux-arm64/console_libraries /var/lib/prometheus/
-sudo mv prometheus-2.45.2.linux-arm64/consoles /var/lib/prometheus/
-
-# update files /etc/systemd/system/prometheus.service
-ExecStart=/usr/local/bin/prometheus \
-    --config.file=/etc/prometheus/prometheus.yml \
-    --storage.tsdb.path=/var/lib/prometheus/ \
-    --web.console.libraries=console_libraries \
-    --web.console.templates=consoles \
-    --storage.tsdb.retention.time=1h \
-    --web.max-connections=10 \
-    --web.listen-address=:9090
-
-
 
 use timm
-test with picomaster:30500/jetson-base:light
-monitoring tools for all nodes (RAM, CPU, GPU)
 tools to deply easily on k3s cluster
 send notification when job is failed, running, completed states
 send training and predictions results (via mail, ...)
 
 myhost(prometheus+grafana [storage+dashboard]) -> M,S1,S2 (collect metrics + alerts [slack, Mail]).
 
-
-what means
-rule_files:
-  - "alert_rules.yml"
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets: ['localhost:9093']
-
-
-
+update alertmanager.yml
+Promtail / Alloy / loki / grafana
+https://blog.stephane-robert.info/docs/outils/observabilite/logs/loki/

@@ -434,14 +434,14 @@ vi ~/k3s_monitor_env/k3s_job_watcher.py
 -- fin code
 
 # deploy k3s_job_watcher.py as a service, use to produce jobs status
-sudo vi /etc/systemd/system/k3s-job-watcher.service
+sudo vi /etc/systemd/system/k3s-cluster-watcher.service
 -- debut code
-./monitoring/k3s-job-watcher.service
+./monitoring/k3s-cluster-watcher.service
 -- fin code
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now k3s-job-watcher
-sudo systemctl status k3s-job-watcher
+sudo systemctl enable --now k3s-cluster-watcher
+sudo systemctl status k3s-cluster-watcher
 
 # test service if it's return job metrics
 curl -s http://picomaster:9101/metrics | grep k3s_job_status
@@ -495,16 +495,28 @@ curl -G 'http://picomaster:9090/api/v1/query' --data-urlencode 'query=temperatur
 # list hosts and check if picomaster is able to get metrics
 http://picomaster:9090/targets
 
-## (ON MYHOST) Deploy Docker (docker run or docker compose) prometheus+grafana
-
-# after deployement of myhost
+## (ON MYHOST) test that everything works fine
+# test cmd from myhost
 curl -G http://picomaster:9090/federate --data-urlencode 'match[]={job=~".+"}' | head -n 20
-
-# test in browser after install on myhost
+# test browser from myhost
 1- open browser: http://picomaster:9090
 2- Status > Targets
 3- look at 'federated-jetson'
 
+## (ON MYHOST) Deploy Docker (docker run or docker compose) prometheus+grafana
+- some urls:
+  - https://github.com/grafana/grafana/blob/main/conf/defaults.ini
+  - https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/#override-configuration-with-environment-variables
+- deployement of grafana+alertmanager+prometheus(federate)
+- create folders for volumes (prometheus_data, grafana_data, alert_data)
+mkdir -p ~/Téléchargements/ressources/monitoring/prometheus ~/Téléchargements/ressources/monitoring/grafana ~/Téléchargements/ressources/monitoring/alertmanager
+- copy all folders ./monitoring/compose
+  - folder 'alertmanager': all alert manager configs
+  - folder 'prometheus': all prometheus configs
+  - folder 'grafana': all grafana configs
+- start and stop stack (use portainer for monitoring)
+docker compose up -d
+docker compose down -v --remove-orphans
 
 
 #### on myhost
