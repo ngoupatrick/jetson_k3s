@@ -519,118 +519,504 @@ docker compose up -d
 docker compose down -v --remove-orphans
 
 
-#### on myhost
-
--- prometheus.yml # were are my metrics producer (picomaster:9090) -> send to (localhost:9093/federate)
-scrape_configs:
-  - job_name: 'federated-jetson'
-    honor_labels: true
-    metrics_path: '/federate'
-    params:
-      'match[]':
-        - '{job=~".+"}'
-    static_configs:
-      - targets: ['picomaster:9090']
-
-rule_files:
-  - "alert_rules.yml"
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets: ['localhost:9093']
-
-
-
--- alert_rules.yml # what alerts do we want
-groups:
-- name: jetson_alerts
-  rules:
-  - alert: JobFailed
-    expr: k3s_job_status == 0
-    for: 1m
-    annotations:
-      summary: "Job {{ $labels.job_name }} échoué"
-
-  - alert: HighTemp
-    expr: temperature_C{statistic="GPU"} > 80
-    for: 2m
-    annotations:
-      summary: "Surchauffe sur {{ $labels.instance }}"
-
-  # --- ALERTES GPU ---
-  - alert: JetsonGPULimitReached
-    # Alerte si la fréquence actuelle est proche de la fréquence max
-    expr: gpu_utilization_percentage_Hz{nvidia_gpu="freq"} >= gpu_utilization_percentage_Hz{nvidia_gpu="max_freq"} * 0.95
-    for: 5m
-    annotations:
-      summary: "GPU à pleine puissance sur {{ $labels.instance }}"
-      description: "La fréquence GPU est au maximum, indiquant une charge de calcul intensive."
-
-  # --- ALERTES RAM (Système) ---
-  - alert: JetsonHighRamUsage
-    # Calcul : (utilisée / totale) * 100
-    expr: (ram_kB{statistic="used"} / ram_kB{statistic="total"}) * 100 > 85
-    for: 5m
-    annotations:
-      summary: "RAM saturée (>85%) sur {{ $labels.instance }}"
-      description: "La mémoire système est presque pleine, risque d'OOM Kill pour les pods K3s."
-
-  - alert: JetsonHighSharedMemory
-    # Alerte sur la mémoire partagée (souvent utilisée par les buffers graphiques/GPU)
-    expr: (ram_kB{statistic="shared"} / ram_kB{statistic="total"}) * 100 > 30
-    for: 10m
-    annotations:
-      summary: "Mémoire partagée élevée sur {{ $labels.instance }}"
-      description: "La RAM partagée dépasse 30%, vérifiez les fuites mémoire dans les applications GPU."
-
-  # --- ALERTES IRAM (Internal RAM GPU) ---
-  - alert: JetsonHighIRamUsage
-    # Calcul : (utilisée / totale) * 100 pour l'IRAM Maxwell
-    expr: (iram_kB{nvidia_gpu="used",statistic="Nvidia Maxwell"} / iram_kB{nvidia_gpu="total",statistic="Nvidia Maxwell"}) * 100 > 90
-    for: 2m
-    annotations:
-      summary: "IRAM GPU saturée sur {{ $labels.instance }}"
-      description: "La mémoire interne Maxwell est à plus de 90%. Risque de ralentissement majeur des modèles IA."
-
-  # --- ALERTES DISPONIBILITÉ ET REBOOT ---
-  - alert: JetsonNodeDown
-    # Alerte si la métrique n'est plus reçue (le nœud ne répond plus)
-    expr: absent(uptime_s{statistic="alive"})
-    for: 2m
-    annotations:
-      summary: "Nœud {{ $labels.instance }} injoignable"
-      description: "L'exportateur sur le nœud ne répond plus depuis 2 minutes."
-
-  - alert: JetsonRecentlyRebooted
-    # Alerte si l'uptime est inférieur à 5 minutes (vient de redémarrer)
-    expr: uptime_s{statistic="alive"} < 300
-    for: 1m
-    annotations:
-      summary: "Nœud {{ $labels.instance }} a redémarré"
-      description: "Le système vient de redémarrer. Uptime actuel : {{ $value }} secondes."
-
-
--- alertmanager.yml # pushing notifications
-route:
-  receiver: 'slack-notifications'
-
-receivers:
-- name: 'slack-notifications'
-  slack_configs:
-  - api_url: 'https://slack.com'
-    channel: '#alerts'
-    text: "Alerte : {{ .CommonAnnotations.summary }}"
-  email_configs:
-  - to: 'votre@email.com'
-    from: 'admin@myhost.com'
-    smarthost: '://gmail.com'
-    auth_password: 'votre_app_password'
-
 -- GRAFANA dashboard
 https://grafana.com/grafana/dashboards/21727-nvidia-jetson/
 https://oneuptime.com/blog/post/2026-02-02-k3s-monitoring/view
 https://blog.alphabravo.io/part-5-k3s-zero-to-hero-advanced-k3s-management-monitoring-scaling-and-upgrades/
 
+-- loki
+https://blog.stephane-robert.info/docs/outils/observabilite/logs/loki/
+
+
+=================== PROMTAIL + LOKI + GRAFANA
+urls:
+  https://github.com/jafernandez73/grafana-loki/blob/master/docs/promtail.md
+
+- on M (fluent-bit)
+sudo apt-get install -y cmake build-essential flex bison libssl-dev checkinstall
+git clone --depth 1 --branch v1.9.10 https://github.com/fluent/fluent-bit.git
+cd ~/fluent-bit/build
+
+https://github.com/fluent/fluent-bit/issues/6464
+
+cmake -DFLB_ALL=OFF \
+      -DFLB_RELEASE=ON \
+      -DFLB_JEMALLOC=ON \
+      -DFLB_TLS=ON \
+      -DFLB_DEBUG=OFF \
+      -DFLB_EXAMPLES=OFF \
+      -DFLB_PARSER=ON \
+      -DFLB_HTTP_SERVER=ON \
+      -DFLB_CHUNK_TRACE=ON \
+      -DFLB_FILTER_WASM=ON \
+      -DFLB_CONFIG_YAML=OFF \
+      -DFLB_IN_HTTP=ON \
+      -DFLB_IN_TAIL=ON \
+      -DFLB_FILTER_GREP=ON \
+      -DFLB_FILTER_RECORD_MODIFIER=ON \
+      -DFLB_OUT_LOKI=ON \
+      -DFLB_OUT_PROMETHEUS_EXPORTER=OFF \
+      -DFLB_OUT_PROMETHEUS_REMOTE_WRITE=OFF \
+      -DFLB_OUT_OPENTELEMETRY=OFF \
+      -DFLB_FILTER_LUA=OFF \
+      -DFLB_FILTER_KUBERNETES=OFF \
+      -DFLB_FILTER_GEOIP2=OFF \
+      -DFLB_FILTER_NIGHTFALL=OFF \
+      ..
+
+cmake \
+    -DFLB_ALL=OFF \
+    -DFLB_DEV=OFF \
+    -DFLB_REGEX=ON \
+    -DFLB_UTF8_ENCODER=ON \
+    -DFLB_PARSER=ON \
+    -DFLB_TLS=ON \
+    -DFLB_BINARY=ON \
+    -DFLB_SHARED_LIB=ON \
+    -DFLB_INOTIFY=ON \
+    -DFLB_BACKTRACE=OFF \
+    -DFLB_RECORD_ACCESSOR=ON \
+    -DFLB_CONFIG_YAML=OFF \
+    -DFLB_IN_SYSTEMD=OFF \
+    -DFLB_OUT_FORWARD=OFF \
+    -DFLB_FILTER_MODIFY=ON \
+    -DFLB_FILTER_RECORD_MODIFIER=ON \
+    -DFLB_DEBUG=OFF \
+    -DFLB_RELEASE=ON \
+    -DFLB_SMALL=ON \
+    -DFLB_COVERAGE=ON \
+    -DFLB_JEMALLOC=ON \
+    -DFLB_EXAMPLES=OFF \
+    -DFLB_VALGRIND=OFF \
+    -DFLB_TRACE=OFF \
+    -DFLB_CHUNK_TRACE=OFF \
+    -DFLB_TESTS_RUNTIME=OFF \
+    -DFLB_TESTS_INTERNAL=OFF \
+    -DFLB_TESTS_INTERNAL_FUZZ=OFF \
+    -DFLB_TESTS_OSSFUZZ=OFF \
+    -DFLB_MTRACE=OFF \
+    -DFLB_POSIX_TLS=OFF \
+    -DFLB_SQLDB=OFF \
+    -DFLB_HTTP_SERVER=ON \
+    -DFLB_LUAJIT=OFF \
+    -DFLB_SIGNV4=OFF \
+    -DFLB_AWS=OFF \
+    -DFLB_STATIC_CONF=OFF \
+    -DFLB_STREAM_PROCESSOR=OFF \
+    -DFLB_CORO_STACK_SIZE=OFF \
+    -DFLB_AVRO_ENCODER=OFF \
+    -DFLB_AWS_ERROR_REPORTER=OFF \
+    -DFLB_ARROW=OFF \
+    -DFLB_WINDOWS_DEFAULTS=OFF \
+    -DFLB_WASM=ON \
+    -DFLB_WAMRC=ON \
+    -DFLB_METRICS=OFF \
+    -DFLB_PROXY_GO=OFF \
+    -DFLB_CUSTOM_CALYPTIA=OFF \
+    -DFLB_IN_CPU=OFF \
+    -DFLB_IN_THERMAL=OFF \
+    -DFLB_IN_DISK=OFF \
+    -DFLB_IN_DOCKER=OFF \
+    -DFLB_IN_DOCKER_EVENTS=OFF \
+    -DFLB_IN_EXEC=OFF \
+    -DFLB_IN_EXEC_WASI=OFF \
+    -DFLB_IN_EVENT_TEST=OFF \
+    -DFLB_IN_EVENT_TYPE=OFF \
+    -DFLB_IN_FLUENTBIT_METRICS=OFF \
+    -DFLB_IN_FORWARD=OFF \
+    -DFLB_IN_HEALTH=OFF \
+    -DFLB_IN_HTTP=ON \
+    -DFLB_IN_MEM=OFF \
+    -DFLB_IN_KAFKA=OFF \
+    -DFLB_IN_KMSG=OFF \
+    -DFLB_IN_LIB=OFF \
+    -DFLB_IN_RANDOM=OFF \
+    -DFLB_IN_SERIAL=OFF \
+    -DFLB_IN_STDIN=OFF \
+    -DFLB_IN_SYSLOG=OFF \
+    -DFLB_IN_TAIL=ON \
+    -DFLB_IN_UDP=OFF \
+    -DFLB_IN_TCP=OFF \
+    -DFLB_IN_UNIX_SOCKET=OFF \
+    -DFLB_IN_MQTT=OFF \
+    -DFLB_IN_HEAD=OFF \
+    -DFLB_IN_PROC=OFF \
+    -DFLB_IN_DUMMY=OFF \
+    -DFLB_IN_NGINX_EXPORTER_METRICS=OFF \
+    -DFLB_IN_NETIF=OFF \
+    -DFLB_IN_WINLOG=OFF \
+    -DFLB_IN_WINSTAT=OFF \
+    -DFLB_IN_WINEVTLOG=OFF \
+    -DFLB_IN_COLLECTD=OFF \
+    -DFLB_IN_PROMETHEUS_SCRAPE=OFF \
+    -DFLB_IN_STATSD=OFF \
+    -DFLB_IN_EVENT_TEST=OFF \
+    -DFLB_IN_STORAGE_BACKLOG=OFF \
+    -DFLB_IN_EMITTER=OFF \
+    -DFLB_IN_NODE_EXPORTER_METRICS=OFF \
+    -DFLB_IN_WINDOWS_EXPORTER_METRICS=OFF \
+    -DFLB_IN_OPENTELEMETRY=OFF \
+    -DFLB_OUT_AZURE=OFF \
+    -DFLB_OUT_AZURE_BLOB=OFF \
+    -DFLB_OUT_AZURE_KUSTO=OFF \
+    -DFLB_OUT_BIGQUERY=OFF \
+    -DFLB_OUT_CALYPTIA=OFF \
+    -DFLB_OUT_COUNTER=OFF \
+    -DFLB_OUT_DATADOG=OFF \
+    -DFLB_OUT_ES=OFF \
+    -DFLB_OUT_EXIT=OFF \
+    -DFLB_OUT_GELF=OFF \
+    -DFLB_OUT_HTTP=OFF \
+    -DFLB_OUT_INFLUXDB=OFF \
+    -DFLB_OUT_NATS=OFF \
+    -DFLB_OUT_NRLOGS=OFF \
+    -DFLB_OUT_OPENSEARCH=OFF \
+    -DFLB_OUT_TCP=OFF \
+    -DFLB_OUT_PLOT=OFF \
+    -DFLB_OUT_FILE=OFF \
+    -DFLB_OUT_TD=OFF \
+    -DFLB_OUT_RETRY=OFF \
+    -DFLB_OUT_PGSQL=OFF \
+    -DFLB_OUT_SKYWALKING=OFF \
+    -DFLB_OUT_SLACK=OFF \
+    -DFLB_OUT_SPLUNK=OFF \
+    -DFLB_OUT_STACKDRIVER=OFF \
+    -DFLB_OUT_STDOUT=OFF \
+    -DFLB_OUT_SYSLOG=OFF \
+    -DFLB_OUT_LIB=OFF \
+    -DFLB_OUT_NULL=OFF \
+    -DFLB_OUT_FLOWCOUNTER=OFF \
+    -DFLB_OUT_LOGDNA=OFF \
+    -DFLB_OUT_LOKI=ON \
+    -DFLB_OUT_KAFKA=OFF \
+    -DFLB_OUT_KAFKA_REST=OFF \
+    -DFLB_OUT_CLOUDWATCH_LOGS=OFF \
+    -DFLB_OUT_KINESIS_FIREHOSE=OFF \
+    -DFLB_OUT_KINESIS_STREAMS=OFF \
+    -DFLB_OUT_OPENTELEMETRY=OFF \
+    -DFLB_OUT_PROMETHEUS_EXPORTER=OFF \
+    -DFLB_OUT_PROMETHEUS_REMOTE_WRITE=OFF \
+    -DFLB_OUT_S3=OFF \
+    -DFLB_OUT_WEBSOCKET=OFF \
+    -DFLB_FILTER_ALTER_SIZE=OFF \
+    -DFLB_FILTER_AWS=OFF \
+    -DFLB_FILTER_ECS=OFF \
+    -DFLB_FILTER_CHECKLIST=OFF \
+    -DFLB_FILTER_EXPECT=OFF \
+    -DFLB_FILTER_GREP=ON \
+    -DFLB_FILTER_STDOUT=OFF \
+    -DFLB_FILTER_PARSER=OFF \
+    -DFLB_FILTER_KUBERNETES=OFF \
+    -DFLB_FILTER_REWRITE_TAG=OFF \
+    -DFLB_FILTER_THROTTLE=OFF \
+    -DFLB_FILTER_THROTTLE_SIZE=OFF \
+    -DFLB_FILTER_TYPE_CONVERTER=OFF \
+    -DFLB_FILTER_MULTILINE=OFF \
+    -DFLB_FILTER_NEST=OFF \
+    -DFLB_FILTER_LUA=OFF \
+    -DFLB_FILTER_LUA_USE_MPACK=OFF \
+    -DFLB_FILTER_TENSORFLOW=OFF \
+    -DFLB_FILTER_GEOIP2=OFF \
+    -DFLB_FILTER_NIGHTFALL=OFF \
+    -DFLB_FILTER_WASM=OFF \
+    ..
+
+
+make -j3
+#sudo make Install
+sudo checkinstall --pkgname=fluent-bit --pkgversion=1.9.10 --pkgrelease=1 --type=debian
+  sudo apt remove fluent-bit
+  sudo dpkg -r fluent-bit
+mv fluent-bit_1.9.10-1_arm64.deb ~/
+cd
+fluent-bit --version
+rm -rf ~/fluent-bit
+
+# check folder: /etc/fluent-bit/
+# else: sudo mkdir -p /etc/fluent-bit/
+
+# check content of: /etc/fluent-bit/parsers.conf
+# else create it: sudo vi /etc/fluent-bit/parsers.conf
+[PARSER]
+    Name        docker
+    Format      json
+    Time_Key    time
+    Time_Format %Y-%m-%dT%H:%M:%S.%L
+    Time_Keep   On
+
+
+sudo vi /etc/fluent-bit/fluent-bit.conf
+-- debut code
+[SERVICE]
+    # Fréquence d'envoi des logs vers MyHost (en secondes)
+    Flush        5
+    Daemon       Off
+    Log_Level    info
+    # File location: /etc/fluent-bit/parsers.conf
+    Parsers_File /etc/fluent-bit/parsers.conf
+    # Désactivé car non inclus dans votre build CMake
+    HTTP_Server  Off
+
+# ----------------------------------------------------------------
+# INPUTS : RÉCEPTION DES LOGS
+# ----------------------------------------------------------------
+
+[INPUT]
+    # RÉCEPTION : Écoute les logs des workers
+    Name        http
+    Listen      0.0.0.0
+    Port        3101
+    Tag         remote_logs
+    # Réponse attendue par Promtail pour confirmer la réception (ERROR)
+    #Success_Code 204
+
+[INPUT]
+    # LOCAL : Lit les logs des pods tournant physiquement sur picomaster
+    Name             tail
+    Path             /var/log/pods/*/*/*.log
+    # On exclut déjà kube-system ici pour économiser les ressources
+    Exclude_Path     /var/log/pods/kube-system_*
+    Tag              local_logs
+    Mem_Buf_Limit    5MB
+    Skip_Long_Lines  On
+    # f parsers name is docker (see above)
+    Parser           docke
+
+# ----------------------------------------------------------------
+# FILTERS : NETTOYAGE ET LABELS
+# ----------------------------------------------------------------
+
+[FILTER]
+    # Sécurité : Supprime les logs kube-system s'ils arrivent des workers
+    Name    grep
+    Match   remote_logs
+    Exclude log .*kube-system.*
+
+[FILTER]
+    # Ajoute le label instance "picomaster" uniquement aux logs locaux de picomaster
+    # (les workers envoient déjà leur propre label instance)
+    Name    record_modifier
+    Match   local_logs
+    Record  instance picomaster
+    Record  job k3s-logs
+
+# ----------------------------------------------------------------
+# OUTPUT : ENVOI VERS CLIENT EXTERNE LOKI
+# ----------------------------------------------------------------
+
+[OUTPUT]
+    # ENVOI : Envoie tout vers le host de LOKI
+    # 192.168.1.4 --> loki address
+    Name            loki
+    Match           *
+    Host            192.168.1.4
+    Port            9993
+    Labels          job=k3s-cluster
+    # Envoie tous les labels attachés (instance, namespace, pod, etc.) (ERROR)
+    #Auto_Labels     On
+    # Optionnel : si le host de LOKI est injoignable, on réessaie indéfiniment
+    Retry_Limit     False
+-- fin code
+
+sudo vi /etc/systemd/system/fluent-bit.service
+-- debut code
+[Unit]
+Description=Fluent Bit Relay Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+# Ajustez le chemin vers votre binaire et votre config
+ExecStart=/usr/local/bin/fluent-bit -c /etc/fluent-bit/fluent-bit.conf
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target
+
+-- fin code
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now fluent-bit
+sudo systemctl status fluent-bit
+journalctl -u fluent-bit -f
+
+rm -rf ~/fluent-bit/build
+
+- on workers (promtail)
+
+# install mini promtail
+curl -L -C - \
+https://github.com/grafana/loki/releases/download/v2.8.6/promtail-linux-arm64.zip \
+-o promtail-linux-arm64.zip
+
+unzip "promtail-linux-arm64.zip"
+chmod a+x promtail-linux-arm64
+sudo mv promtail-linux-arm64 /usr/local/bin/promtail
+
+promtail --version
+
+rm -rf promtail-linux-arm64.zip
+
+sudo mkdir -p /etc/promtail
+sudo vi /etc/promtail/config.yml
+-- debut code
+server:
+  #http_listen_port: 9080
+  #grpc_listen_port: 0
+  http_listen_address: 127.0.0.1
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: error  # Réduit aussi le bruit des logs de l'agent
+
+clients:
+  - url: http://picomaster:3101/loki/api/v1/push
+
+scrape_configs:
+  - job_name: k3s_nodes
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          instance: "picoworker1" # À changer en "picoworker1" sur le deuxième nœud ...
+          cluster: "jetson-cluster"
+          __path__: /var/log/pods/*/*/*.log
+
+    pipeline_stages:
+      #- drop:
+      #    source: filename
+      #    expression: ".*kube-system.*" # Ignore les logs système
+      - docker: {} # Parse le format JSON de Docker utilisé par votre K3s
+    
+    relabel_configs:
+      - source_labels: [__path__]
+        regex: .*/pods/kube-system_.*
+        action: drop
+      - source_labels: [__path__]
+        regex: '.*/pods/([^/]+)_([^/]+)_([^/]+)/([^/]+)/.*\.log'
+        target_label: namespace
+        replacement: '$1'
+      - source_labels: [__path__]
+        regex: '.*/pods/([^/]+)_([^/]+)_([^/]+)/([^/]+)/.*\.log'
+        target_label: pod
+        replacement: '$2'
+      - source_labels: [__path__]
+        regex: '.*/pods/([^/]+)_([^/]+)_([^/]+)/([^/]+)/.*\.log'
+        target_label: container
+        replacement: '$4'
+-- fin code
+
+sudo vi /etc/systemd/system/promtail.service
+-- debut code
+[Unit]
+Description=Promtail service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+# Ajustez le chemin vers votre binaire et votre config
+ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail/config.yml
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target
+-- fin code
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now promtail
+sudo systemctl status promtail
+journalctl -u promtail -f
+
+# reinit promtail
+sudo systemctl stop promtail
+sudo rm -rf /var/log/positions.yaml
+sudo systemctl start promtail
+journalctl -u promtail -f
+
+-- test global
+
+curl http://localhost:9080/targets #<-- on Workers
+sudo journalctl -u fluent-bit -f # <-- on master
+  #[output:loki:loki.0] post ok, status=204
+
+- (on myhost): loki setup
+
+.
+├── docker-compose.yml
+└── loki-config.yaml    # Le fichier de config Loki vu précédemment
+
+nano compose.yml
+-- debut code
+version: "3.8"
+
+services:
+  loki:
+    image: grafana/loki:3.6.10
+    container_name: loki
+    hostname: loki
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml
+      - loki_data:/tmp/loki
+    ports:
+      - "9993:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+# create folder loki_data
+volumes:
+  loki_data:
+    driver: local
+-- fin code
+
+nano loki-config.yaml
+-- debut code
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /tmp/loki
+  storage:
+    filesystem:
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+limits_config:
+  reject_old_samples: true
+  reject_old_samples_max_age: 72h # Rejette les vieux logs (3j)
+  retention_period: 72h           # Garde les logs 72 heures seulement
+
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 72h           # Active la suppression automatique après 72h
+
+schema_config:
+  configs:
+    - from: "2026-04-13"         # Date passée pour une nouvelle installation
+      store: tsdb               # Utilise le moteur TSDB (recommandé pour v3.x)
+      object_store: filesystem  # Stockage local des fichiers
+      schema: v13               # Version de schéma pour Loki 3.x
+      index:
+        prefix: index_
+        period: 24h             # Rotation des index toutes les 24h
+
+-- fin code
 
 =================== TEST CORE AI MODULES (ALL NODES)
 - CUDA 10.2

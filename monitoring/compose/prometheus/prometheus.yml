@@ -5,16 +5,20 @@ scrape_configs:
     params:
       'match[]':
         - '{job=~".+"}'
+        - '{job="node-exporter"}'
+        - '{job="jetson-exporter"}'
+        - '{__name__=~"job:.*"}'
     static_configs:
       - targets: ['picomaster:9090']
+
     relabel_configs:
       - source_labels: [__address__]
         regex: '([^:]+):.*'      # Capture tout ce qui est avant le ":"
         target_label: instance   # Remplace le label instance
-        replacement: '${1}'      # Garde uniquement la capture (S1)
+        replacement: '$1'     # Garde uniquement la capture (S1) - ${1}
       - source_labels: [instance]
         target_label: instance
-        action: lowercase        # Transforme "S1" en "s1"
+        action: lowercase
 
 rule_files:
   - "/etc/prometheus/alert.rules.yml"

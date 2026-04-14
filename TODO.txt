@@ -1,6 +1,7 @@
 TODO:
 jetpack 4.6.6 k3s v1.24.17+k3s1
 nodes M, S1, S2
+myhost(prometheus(federate+longterm storage)+grafana[storage+dashboard]+alerts [slack, Mail]) -> M,S1,S2 (collect metrics + 2h storage).
 curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" sh -s - server \
   --cluster-init \
   --disable metrics-server \
@@ -22,8 +23,33 @@ tools to deply easily on k3s cluster
 send notification when job is failed, running, completed states
 send training and predictions results (via mail, ...)
 
-myhost(prometheus+grafana [storage+dashboard]) -> M,S1,S2 (collect metrics + alerts [slack, Mail]).
+use your phone/myhost camera stream
 
 update alertmanager.yml
 Promtail / Alloy / loki / grafana
 https://blog.stephane-robert.info/docs/outils/observabilite/logs/loki/
+
+
+temperature_C{statistic="PLL"} 
+temperature_C{statistic="CPU"} 
+temperature_C{statistic="GPU"} 
+temperature_C{statistic="AO"}
+temperature_C{statistic="thermal"}
+ram_kB{statistic="total"}
+ram_kB{statistic="used"}
+ram_kB{statistic="shared"}
+iram_kB{nvidia_gpu="used",statistic="Nvidia Maxwell"}
+iram_kB{nvidia_gpu="total",statistic="Nvidia Maxwell"}
+uptime_s{statistic="alive"}
+disk_GB{mountpoint="total"}
+disk_GB{mountpoint="used"}
+disk_GB{mountpoint="free"}
+disk_GB{mountpoint="percent"}
+
+transformation
+rename fields
+match=(.*):9100
+replace=$1
+
+count(k3s_job_status{namespace!="kube-system"}) by (namespace)
+

@@ -21,11 +21,42 @@ groups:
     annotations:
       summary: "Job {{ $labels.job_name }} échoué"
 
-  - alert: HighTemp
+  # --- TEMPÉRATURE ---
+  - alert: HighTempGPU
     expr: temperature_C{statistic="GPU"} > 80
     for: 2m
+    labels:
+      severity: critical
     annotations:
       summary: "Surchauffe sur {{ $labels.instance }}"
+      description: "La température GPU est à {{ $value }}°C."
+
+  - alert: JetsonCriticalOverheating
+    expr: temperature_C{statistic="thermal"} > 80
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Surchauffe Critique : {{ $labels.instance }}"
+      description: "Température SOC à {{ $value }}°C. Risque de dommages matériels ou arrêt forcé."
+
+  - alert: JetsonThrottlingRisk
+    expr: temperature_C{statistic="thermal"} > 70
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Throttling thermique sur {{ $labels.instance }}"
+      description: "Température à {{ $value }}°C. Les performances CPU/GPU vont être bridées."
+
+  - alert: JetsonHighTemp
+    expr: temperature_C{statistic="thermal"} > 75
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Surchauffe sur {{ $labels.instance }}"
+      description: "La température thermique est à {{ $value }}°C."
 
   # --- ALERTES GPU ---
   - alert: JetsonGPULimitReached
@@ -41,6 +72,8 @@ groups:
     # Calcul : (utilisée / totale) * 100
     expr: (ram_kB{statistic="used"} / ram_kB{statistic="total"}) * 100 > 85
     for: 5m
+    labels:
+      severity: critical
     annotations:
       summary: "RAM saturée (>85%) sur {{ $labels.instance }}"
       description: "La mémoire système est presque pleine, risque d'OOM Kill pour les pods K3s."
@@ -49,9 +82,20 @@ groups:
     # Alerte sur la mémoire partagée (souvent utilisée par les buffers graphiques/GPU)
     expr: (ram_kB{statistic="shared"} / ram_kB{statistic="total"}) * 100 > 30
     for: 10m
+    labels:
+      severity: warning
     annotations:
       summary: "Mémoire partagée élevée sur {{ $labels.instance }}"
       description: "La RAM partagée dépasse 30%, vérifiez les fuites mémoire dans les applications GPU."
+
+  - alert: JetsonOOMRisk
+    expr: (ram_kB{statistic="used"} / ram_kB{statistic="total"}) * 100 > 90
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Saturation RAM imminente : {{ $labels.instance }}"
+      description: "Utilisation RAM à {{ $value }}%. Le Jetson Nano risque de freezer totalement."
 
   # --- ALERTES IRAM (Internal RAM GPU) ---
   - alert: JetsonHighIRamUsage
@@ -61,6 +105,16 @@ groups:
     annotations:
       summary: "IRAM GPU saturée sur {{ $labels.instance }}"
       description: "La mémoire interne Maxwell est à plus de 90%. Risque de ralentissement majeur des modèles IA."
+
+  # --- DISQUE / STOCKAGE ---
+  - alert: JetsonDiskFull
+    expr: disk_GB{mountpoint="percent"} > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Disque presque plein sur {{ $labels.instance }}"
+      description: "L'utilisation du disque a atteint {{ $value }}%."
 
   # --- ALERTES DISPONIBILITÉ ET REBOOT ---
   - alert: JetsonNodeDown
