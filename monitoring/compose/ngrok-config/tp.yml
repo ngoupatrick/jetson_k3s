@@ -1,0 +1,6 @@
+on_http_request:
+  - actions:
+      - type: basic-auth
+        config:
+          credentials:
+            - ${NGROK_USER}:${NGROK_PASS}

@@ -1,0 +1,63 @@
+data_dir = "/var/lib/vector"
+
+[api]
+enabled = false
+
+# --- SOURCES ---
+# Réception native depuis S1 & S2
+[sources.from_workers_nodes]
+type = "vector"
+address = "0.0.0.0:6000"
+
+# Logs Pods locaux de picomaster
+[sources.local_picomaster_pods]
+type = "file"
+include = ["/var/log/pods/*/*/*.log"]
+exclude = ["/var/log/pods/kube-system_*/*/*.log"]
+
+# --- TRANSFORMS ---
+[transforms.process_picomaster_logs]
+type = "remap"
+inputs = ["local_picomaster_pods"]
+source = """
+.cluster = "jetson-cluster"
+.instance = "picomaster"
+.job = "k3s-logs"
+
+# Extraction des métadonnées du chemin
+parsed = parse_regex(.file, r'.*/pods/(?P<namespace>[^/]+)_(?P<pod>[^/]+)_[^/]+/(?P<container>[^/]+)/.*') ?? {}
+.namespace = parsed.namespace
+.pod = parsed.pod
+.container = parsed.container
+
+del(.file)
+"""
+
+# --- SINK (Envoi vers MyHost) ---
+[sinks.to_loki_host]
+type = "loki"
+inputs = ["from_workers_nodes", "process_picomaster_logs"]
+endpoint = "http://192.168.1.4:9993"
+compression = "snappy"
+
+[sinks.to_loki_host.labels]
+cluster = "{{ cluster }}"
+instance = "{{ instance }}"
+job = "{{ job }}"
+namespace = "{{ namespace }}"
+pod = "{{ pod }}"
+container = "{{ container }}"
+
+[sinks.to_loki_host.encoding]
+codec = "json"
+
+[sinks.to_loki_host.buffer]
+type = "disk"
+max_size = 314572800 # 300 Mo (314572800 octets) pour satisfaire le minimum requis
+when_full = "drop_newest"
+
+# --- FOR TEST --- (!!!! COMMENT IT)
+[sinks.debug_s1]
+type = "console"
+inputs = ["from_workers_nodes", "process_picomaster_logs"]
+encoding.codec = "json"

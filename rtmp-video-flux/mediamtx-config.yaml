@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: media 
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mediamtx-config
+  namespace: media
+data:
+  mediamtx.yml: |
+    paths:
+      # On définit un chemin local "host_stream"
+      host_stream:
+        # MediaMTX va chercher (pull) le flux sur votre PC
+        source: rtmp://192.168.1.4/live/test
+        # Reconnexion automatique si le PC coupe le flux
+        sourceOnDemand: false
+
+    rtspTransports: [udp, multicast, tcp]
+    writeQueueSize: 1024    
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediamtx
+  namespace: media
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mediamtx
+  template:
+    metadata:
+      labels:
+        app: mediamtx
+    spec:
+      ## Force le déploiement sur le Maître (M) car c'est le seul qui voit votre PC
+      #nodeSelector:
+      #  node-role.kubernetes.io/control-plane: "true"
+      hostNetwork: true
+      containers:
+      - name: mediamtx
+        image: bluenviron/mediamtx:latest
+        ports:
+        - containerPort: 8554 # RTSP
+        - containerPort: 1935 # RTMP (Optionnel pour Phone)
+        - containerPort: 8888 # HLS/WebRTC (Optionnel)
+        volumeMounts:
+        - name: config
+          mountPath: /mediamtx.yml
+          subPath: mediamtx.yml
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+      volumes:
+      - name: config
+        configMap:
+          name: mediamtx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx-service
+  namespace: media
+spec:
+  type: NodePort
+  selector:
+    app: mediamtx
+  ports:
+    - name: rtsp
+      protocol: TCP
+      port: 8554
+      targetPort: 8554
+      nodePort: 30554
+    - name: rtmp
+      protocol: TCP
+      port: 1935
+      targetPort: 1935
+      nodePort: 30935

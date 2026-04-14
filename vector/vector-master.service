@@ -1,0 +1,17 @@
+[Unit]
+Description=Vector
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/vector --config /etc/vector/vector.toml
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+MemoryLimit=150M
+CPUQuota=15%
+
+[Install]
+WantedBy=multi-user.target

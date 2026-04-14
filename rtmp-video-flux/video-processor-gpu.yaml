@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: video-processor-gpu
+  namespace: media
+spec:
+  replicas: 1 # Un sur S1, un sur S2 (si disponible)
+  selector:
+    matchLabels:
+      app: video-processor
+  template:
+    metadata:
+      labels:
+        app: video-processor
+    spec:
+      nodeSelector:
+        hardware: "gpu" # Utilise les labels définis lors de l'install K3s
+      hostNetwork: true
+      containers:
+      - name: processor
+        image: picomaster:30500/gpu-processor:v1
+        securityContext:
+          privileged: true
+        env:
+        - name: LD_LIBRARY_PATH
+          value: "/usr/lib/aarch64-linux-gnu/tegra"
+        - name: RTSP_URL # On peut utiliser RTSP même si la source est RTMP
+          value: "rtsp://mediamtx-service:8554/host_stream"
+        resources:
+          limits:
+            #nvidia.com/gpu: 1
+            memory: "1500Mi"
+        #volumeMounts:
+        #- name: tegra-libs
+        #  mountPath: /usr/lib/aarch64-linux-gnu/tegra
+      #volumes:
+      #- name: tegra-libs
+      #  hostPath:
+      #    path: /usr/lib/aarch64-linux-gnu/tegra
+      #restartPolicy: Never

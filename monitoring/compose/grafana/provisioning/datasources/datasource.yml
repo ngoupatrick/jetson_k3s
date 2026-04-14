@@ -1,15 +1,27 @@
 apiVersion: 1
-#datasources:
-#  - name: Prometheus
-#    type: prometheus
-#    url: http://prometheus:9090
-#    isDefault: true
 
 datasources:
+# grafana datasource configuration for Prometheus
 - name: Prometheus
   url: 'http://prometheus:9090/federate'
-  editable: false
+  editable: true
   is_default: true
   type: prometheus
   version: 1
   org_id: 1
+# grafana datasource configuration for Loki
+- name: Loki-jetson
+  url: 'http://loki:3100/'
+  editable: true
+  is_default: false
+  type: loki
+  version: 1
+  org_id: 1
+
+#- name: Loki
+#  url: 'http://loki:3100/loki/api/v1/query'
+#  editable: true
+#  is_default: false
+#  type: loki
+#  version: 1
+#  org_id: 1

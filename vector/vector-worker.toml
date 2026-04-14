@@ -1,0 +1,46 @@
+data_dir = "/var/lib/vector"
+
+[api]
+enabled = false
+
+# --- SOURCES LOCAL ---
+# Collecte locale
+[sources.local_pods]
+type = "file"
+include = ["/var/log/pods/*/*/*.log"]
+exclude = ["/var/log/pods/kube-system_*/*/*.log"]
+
+# --- TRANSFORMS ---
+[transforms.parse_logs]
+type = "remap"
+inputs = ["local_pods"]
+source = """
+.cluster = "jetson-cluster"
+.instance = "picoworker1"  # /!\\ Mettre "picoworker2" sur l'autre nœud
+.job = "k3s-logs"
+
+# Extraction des métadonnées du chemin
+parsed = parse_regex(.file, r'.*/pods/(?P<namespace>[^/]+)_(?P<pod>[^/]+)_[^/]+/(?P<container>[^/]+)/.*') ?? {}
+.namespace = parsed.namespace
+.pod = parsed.pod
+.container = parsed.container
+
+del(.file)
+"""
+# --- SINK (Envoi vers picomaster) ---
+[sinks.to_master]
+type = "vector" # Protocole natif Vector-to-Vector (très léger)
+inputs = ["parse_logs"]
+address = "picomaster:6000"
+
+# --- LIMITATION STOCKAGE ---
+[sinks.to_master.buffer]
+type = "memory"           # Utilise la RAM pour plus de rapidité (pas de disque)
+max_events = 100         # Garde seulement les 1000 derniers messages en cas de coupure
+when_full = "drop_newest" # Jette les vieux logs si M est injoignable
+
+# --- TEST --- (TO REMOVE)
+[sinks.debug_s1]
+type = "console"
+inputs = ["parse_logs"]
+encoding.codec = "json"

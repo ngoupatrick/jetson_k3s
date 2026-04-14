@@ -61,7 +61,7 @@ services:
     container_name: grafana
     hostname: grafana
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -78,6 +78,58 @@ services:
     restart: unless-stopped
     networks:
       - jetson
+
+  loki:
+    image: grafana/loki:3.6.10
+    container_name: loki
+    hostname: loki
+    user: root
+    healthcheck:
+      #test: wget --quiet --tries=1 --output-document=- http://localhost:3100/ready | grep -q -w ready || exit 1
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    ports:
+      - "9993:3100"
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki_data:/tmp/loki    
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - jetson
+
+  ngrok-tunnel:
+    image: ngrok/ngrok:3-alpine
+    container_name: ngrok-tunnel
+    hostname: ngrok-tunnel
+    #restart: unless-stopped
+    depends_on:
+      grafana:
+        condition: service_healthy
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_TOKEN}
+      NGROK_DOMAIN: ${NGROK_DOMAINS}
+      NGROK_USER: ${NGROK_USER}
+      NGROK_PASS: ${NGROK_PASS}
+    #volumes:
+    #  - ./ngrok-config/tp.yml:/etc/tp.yml
+    command:
+      - http
+      - grafana:3000
+      - --url=${NGROK_DOMAINS} # <--- TON DOMAINE FIXE ICI
+    #  - --traffic-policy-file /etc/tp.yml
+      - --basic-auth=${NGROK_USER}:${NGROK_PASS}  
+    networks:
+      - jetson
+
 
 volumes:
   prometheus_data:
@@ -97,6 +149,12 @@ volumes:
     driver_opts:
       type: none
       device: /home/patrick/Téléchargements/ressources/monitoring/alertmanager
+      o: bind
+  loki_data:
+    driver: local # Define the driver and options under the volume name
+    driver_opts:
+      type: none
+      device: /home/patrick/Téléchargements/ressources/monitoring/loki
       o: bind
 
 

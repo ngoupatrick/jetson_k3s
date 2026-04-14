@@ -30,7 +30,7 @@ spec:
           value: "/usr/local/cuda-10.2/lib64"
         resources:
           limits:
-            nvidia.com/gpu: 1            
+            nvidia.com/gpu: 1
             memory: "2500Mi"
         volumeMounts:
         - name: cuda-volume

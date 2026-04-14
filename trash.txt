@@ -529,494 +529,91 @@ https://blog.stephane-robert.info/docs/outils/observabilite/logs/loki/
 
 
 =================== PROMTAIL + LOKI + GRAFANA
-urls:
-  https://github.com/jafernandez73/grafana-loki/blob/master/docs/promtail.md
 
-- on M (fluent-bit)
-sudo apt-get install -y cmake build-essential flex bison libssl-dev checkinstall
-git clone --depth 1 --branch v1.9.10 https://github.com/fluent/fluent-bit.git
-cd ~/fluent-bit/build
+##-- (ON WORKER) install vector (0.34.1)
 
-https://github.com/fluent/fluent-bit/issues/6464
+- check libc version
+ldd --version # <-- 2.27
 
-cmake -DFLB_ALL=OFF \
-      -DFLB_RELEASE=ON \
-      -DFLB_JEMALLOC=ON \
-      -DFLB_TLS=ON \
-      -DFLB_DEBUG=OFF \
-      -DFLB_EXAMPLES=OFF \
-      -DFLB_PARSER=ON \
-      -DFLB_HTTP_SERVER=ON \
-      -DFLB_CHUNK_TRACE=ON \
-      -DFLB_FILTER_WASM=ON \
-      -DFLB_CONFIG_YAML=OFF \
-      -DFLB_IN_HTTP=ON \
-      -DFLB_IN_TAIL=ON \
-      -DFLB_FILTER_GREP=ON \
-      -DFLB_FILTER_RECORD_MODIFIER=ON \
-      -DFLB_OUT_LOKI=ON \
-      -DFLB_OUT_PROMETHEUS_EXPORTER=OFF \
-      -DFLB_OUT_PROMETHEUS_REMOTE_WRITE=OFF \
-      -DFLB_OUT_OPENTELEMETRY=OFF \
-      -DFLB_FILTER_LUA=OFF \
-      -DFLB_FILTER_KUBERNETES=OFF \
-      -DFLB_FILTER_GEOIP2=OFF \
-      -DFLB_FILTER_NIGHTFALL=OFF \
-      ..
+- download vector extract and copy in /usr/local/bin/
 
-cmake \
-    -DFLB_ALL=OFF \
-    -DFLB_DEV=OFF \
-    -DFLB_REGEX=ON \
-    -DFLB_UTF8_ENCODER=ON \
-    -DFLB_PARSER=ON \
-    -DFLB_TLS=ON \
-    -DFLB_BINARY=ON \
-    -DFLB_SHARED_LIB=ON \
-    -DFLB_INOTIFY=ON \
-    -DFLB_BACKTRACE=OFF \
-    -DFLB_RECORD_ACCESSOR=ON \
-    -DFLB_CONFIG_YAML=OFF \
-    -DFLB_IN_SYSTEMD=OFF \
-    -DFLB_OUT_FORWARD=OFF \
-    -DFLB_FILTER_MODIFY=ON \
-    -DFLB_FILTER_RECORD_MODIFIER=ON \
-    -DFLB_DEBUG=OFF \
-    -DFLB_RELEASE=ON \
-    -DFLB_SMALL=ON \
-    -DFLB_COVERAGE=ON \
-    -DFLB_JEMALLOC=ON \
-    -DFLB_EXAMPLES=OFF \
-    -DFLB_VALGRIND=OFF \
-    -DFLB_TRACE=OFF \
-    -DFLB_CHUNK_TRACE=OFF \
-    -DFLB_TESTS_RUNTIME=OFF \
-    -DFLB_TESTS_INTERNAL=OFF \
-    -DFLB_TESTS_INTERNAL_FUZZ=OFF \
-    -DFLB_TESTS_OSSFUZZ=OFF \
-    -DFLB_MTRACE=OFF \
-    -DFLB_POSIX_TLS=OFF \
-    -DFLB_SQLDB=OFF \
-    -DFLB_HTTP_SERVER=ON \
-    -DFLB_LUAJIT=OFF \
-    -DFLB_SIGNV4=OFF \
-    -DFLB_AWS=OFF \
-    -DFLB_STATIC_CONF=OFF \
-    -DFLB_STREAM_PROCESSOR=OFF \
-    -DFLB_CORO_STACK_SIZE=OFF \
-    -DFLB_AVRO_ENCODER=OFF \
-    -DFLB_AWS_ERROR_REPORTER=OFF \
-    -DFLB_ARROW=OFF \
-    -DFLB_WINDOWS_DEFAULTS=OFF \
-    -DFLB_WASM=ON \
-    -DFLB_WAMRC=ON \
-    -DFLB_METRICS=OFF \
-    -DFLB_PROXY_GO=OFF \
-    -DFLB_CUSTOM_CALYPTIA=OFF \
-    -DFLB_IN_CPU=OFF \
-    -DFLB_IN_THERMAL=OFF \
-    -DFLB_IN_DISK=OFF \
-    -DFLB_IN_DOCKER=OFF \
-    -DFLB_IN_DOCKER_EVENTS=OFF \
-    -DFLB_IN_EXEC=OFF \
-    -DFLB_IN_EXEC_WASI=OFF \
-    -DFLB_IN_EVENT_TEST=OFF \
-    -DFLB_IN_EVENT_TYPE=OFF \
-    -DFLB_IN_FLUENTBIT_METRICS=OFF \
-    -DFLB_IN_FORWARD=OFF \
-    -DFLB_IN_HEALTH=OFF \
-    -DFLB_IN_HTTP=ON \
-    -DFLB_IN_MEM=OFF \
-    -DFLB_IN_KAFKA=OFF \
-    -DFLB_IN_KMSG=OFF \
-    -DFLB_IN_LIB=OFF \
-    -DFLB_IN_RANDOM=OFF \
-    -DFLB_IN_SERIAL=OFF \
-    -DFLB_IN_STDIN=OFF \
-    -DFLB_IN_SYSLOG=OFF \
-    -DFLB_IN_TAIL=ON \
-    -DFLB_IN_UDP=OFF \
-    -DFLB_IN_TCP=OFF \
-    -DFLB_IN_UNIX_SOCKET=OFF \
-    -DFLB_IN_MQTT=OFF \
-    -DFLB_IN_HEAD=OFF \
-    -DFLB_IN_PROC=OFF \
-    -DFLB_IN_DUMMY=OFF \
-    -DFLB_IN_NGINX_EXPORTER_METRICS=OFF \
-    -DFLB_IN_NETIF=OFF \
-    -DFLB_IN_WINLOG=OFF \
-    -DFLB_IN_WINSTAT=OFF \
-    -DFLB_IN_WINEVTLOG=OFF \
-    -DFLB_IN_COLLECTD=OFF \
-    -DFLB_IN_PROMETHEUS_SCRAPE=OFF \
-    -DFLB_IN_STATSD=OFF \
-    -DFLB_IN_EVENT_TEST=OFF \
-    -DFLB_IN_STORAGE_BACKLOG=OFF \
-    -DFLB_IN_EMITTER=OFF \
-    -DFLB_IN_NODE_EXPORTER_METRICS=OFF \
-    -DFLB_IN_WINDOWS_EXPORTER_METRICS=OFF \
-    -DFLB_IN_OPENTELEMETRY=OFF \
-    -DFLB_OUT_AZURE=OFF \
-    -DFLB_OUT_AZURE_BLOB=OFF \
-    -DFLB_OUT_AZURE_KUSTO=OFF \
-    -DFLB_OUT_BIGQUERY=OFF \
-    -DFLB_OUT_CALYPTIA=OFF \
-    -DFLB_OUT_COUNTER=OFF \
-    -DFLB_OUT_DATADOG=OFF \
-    -DFLB_OUT_ES=OFF \
-    -DFLB_OUT_EXIT=OFF \
-    -DFLB_OUT_GELF=OFF \
-    -DFLB_OUT_HTTP=OFF \
-    -DFLB_OUT_INFLUXDB=OFF \
-    -DFLB_OUT_NATS=OFF \
-    -DFLB_OUT_NRLOGS=OFF \
-    -DFLB_OUT_OPENSEARCH=OFF \
-    -DFLB_OUT_TCP=OFF \
-    -DFLB_OUT_PLOT=OFF \
-    -DFLB_OUT_FILE=OFF \
-    -DFLB_OUT_TD=OFF \
-    -DFLB_OUT_RETRY=OFF \
-    -DFLB_OUT_PGSQL=OFF \
-    -DFLB_OUT_SKYWALKING=OFF \
-    -DFLB_OUT_SLACK=OFF \
-    -DFLB_OUT_SPLUNK=OFF \
-    -DFLB_OUT_STACKDRIVER=OFF \
-    -DFLB_OUT_STDOUT=OFF \
-    -DFLB_OUT_SYSLOG=OFF \
-    -DFLB_OUT_LIB=OFF \
-    -DFLB_OUT_NULL=OFF \
-    -DFLB_OUT_FLOWCOUNTER=OFF \
-    -DFLB_OUT_LOGDNA=OFF \
-    -DFLB_OUT_LOKI=ON \
-    -DFLB_OUT_KAFKA=OFF \
-    -DFLB_OUT_KAFKA_REST=OFF \
-    -DFLB_OUT_CLOUDWATCH_LOGS=OFF \
-    -DFLB_OUT_KINESIS_FIREHOSE=OFF \
-    -DFLB_OUT_KINESIS_STREAMS=OFF \
-    -DFLB_OUT_OPENTELEMETRY=OFF \
-    -DFLB_OUT_PROMETHEUS_EXPORTER=OFF \
-    -DFLB_OUT_PROMETHEUS_REMOTE_WRITE=OFF \
-    -DFLB_OUT_S3=OFF \
-    -DFLB_OUT_WEBSOCKET=OFF \
-    -DFLB_FILTER_ALTER_SIZE=OFF \
-    -DFLB_FILTER_AWS=OFF \
-    -DFLB_FILTER_ECS=OFF \
-    -DFLB_FILTER_CHECKLIST=OFF \
-    -DFLB_FILTER_EXPECT=OFF \
-    -DFLB_FILTER_GREP=ON \
-    -DFLB_FILTER_STDOUT=OFF \
-    -DFLB_FILTER_PARSER=OFF \
-    -DFLB_FILTER_KUBERNETES=OFF \
-    -DFLB_FILTER_REWRITE_TAG=OFF \
-    -DFLB_FILTER_THROTTLE=OFF \
-    -DFLB_FILTER_THROTTLE_SIZE=OFF \
-    -DFLB_FILTER_TYPE_CONVERTER=OFF \
-    -DFLB_FILTER_MULTILINE=OFF \
-    -DFLB_FILTER_NEST=OFF \
-    -DFLB_FILTER_LUA=OFF \
-    -DFLB_FILTER_LUA_USE_MPACK=OFF \
-    -DFLB_FILTER_TENSORFLOW=OFF \
-    -DFLB_FILTER_GEOIP2=OFF \
-    -DFLB_FILTER_NIGHTFALL=OFF \
-    -DFLB_FILTER_WASM=OFF \
-    ..
-
-
-make -j3
-#sudo make Install
-sudo checkinstall --pkgname=fluent-bit --pkgversion=1.9.10 --pkgrelease=1 --type=debian
-  sudo apt remove fluent-bit
-  sudo dpkg -r fluent-bit
-mv fluent-bit_1.9.10-1_arm64.deb ~/
-cd
-fluent-bit --version
-rm -rf ~/fluent-bit
-
-# check folder: /etc/fluent-bit/
-# else: sudo mkdir -p /etc/fluent-bit/
-
-# check content of: /etc/fluent-bit/parsers.conf
-# else create it: sudo vi /etc/fluent-bit/parsers.conf
-[PARSER]
-    Name        docker
-    Format      json
-    Time_Key    time
-    Time_Format %Y-%m-%dT%H:%M:%S.%L
-    Time_Keep   On
-
-
-sudo vi /etc/fluent-bit/fluent-bit.conf
--- debut code
-[SERVICE]
-    # Fréquence d'envoi des logs vers MyHost (en secondes)
-    Flush        5
-    Daemon       Off
-    Log_Level    info
-    # File location: /etc/fluent-bit/parsers.conf
-    Parsers_File /etc/fluent-bit/parsers.conf
-    # Désactivé car non inclus dans votre build CMake
-    HTTP_Server  Off
-
-# ----------------------------------------------------------------
-# INPUTS : RÉCEPTION DES LOGS
-# ----------------------------------------------------------------
-
-[INPUT]
-    # RÉCEPTION : Écoute les logs des workers
-    Name        http
-    Listen      0.0.0.0
-    Port        3101
-    Tag         remote_logs
-    # Réponse attendue par Promtail pour confirmer la réception (ERROR)
-    #Success_Code 204
-
-[INPUT]
-    # LOCAL : Lit les logs des pods tournant physiquement sur picomaster
-    Name             tail
-    Path             /var/log/pods/*/*/*.log
-    # On exclut déjà kube-system ici pour économiser les ressources
-    Exclude_Path     /var/log/pods/kube-system_*
-    Tag              local_logs
-    Mem_Buf_Limit    5MB
-    Skip_Long_Lines  On
-    # f parsers name is docker (see above)
-    Parser           docke
-
-# ----------------------------------------------------------------
-# FILTERS : NETTOYAGE ET LABELS
-# ----------------------------------------------------------------
-
-[FILTER]
-    # Sécurité : Supprime les logs kube-system s'ils arrivent des workers
-    Name    grep
-    Match   remote_logs
-    Exclude log .*kube-system.*
-
-[FILTER]
-    # Ajoute le label instance "picomaster" uniquement aux logs locaux de picomaster
-    # (les workers envoient déjà leur propre label instance)
-    Name    record_modifier
-    Match   local_logs
-    Record  instance picomaster
-    Record  job k3s-logs
-
-# ----------------------------------------------------------------
-# OUTPUT : ENVOI VERS CLIENT EXTERNE LOKI
-# ----------------------------------------------------------------
-
-[OUTPUT]
-    # ENVOI : Envoie tout vers le host de LOKI
-    # 192.168.1.4 --> loki address
-    Name            loki
-    Match           *
-    Host            192.168.1.4
-    Port            9993
-    Labels          job=k3s-cluster
-    # Envoie tous les labels attachés (instance, namespace, pod, etc.) (ERROR)
-    #Auto_Labels     On
-    # Optionnel : si le host de LOKI est injoignable, on réessaie indéfiniment
-    Retry_Limit     False
--- fin code
-
-sudo vi /etc/systemd/system/fluent-bit.service
--- debut code
-[Unit]
-Description=Fluent Bit Relay Service
-After=network.target
-
-[Service]
-Type=simple
-User=root
-# Ajustez le chemin vers votre binaire et votre config
-ExecStart=/usr/local/bin/fluent-bit -c /etc/fluent-bit/fluent-bit.conf
-Restart=on-failure
-RestartSec=10s
-TimeoutStartSec=30s
-TimeoutStopSec=30s
-
-[Install]
-WantedBy=multi-user.target
-
--- fin code
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now fluent-bit
-sudo systemctl status fluent-bit
-journalctl -u fluent-bit -f
-
-rm -rf ~/fluent-bit/build
-
-- on workers (promtail)
-
-# install mini promtail
 curl -L -C - \
-https://github.com/grafana/loki/releases/download/v2.8.6/promtail-linux-arm64.zip \
--o promtail-linux-arm64.zip
+https://github.com/vectordotdev/vector/releases/download/v0.34.1/vector-0.34.1-aarch64-unknown-linux-musl.tar.gz \
+-o vector-0.34.1-aarch64-unknown-linux-musl.tar.gz
+tar xvf vector-0.34.1-aarch64-unknown-linux-musl.tar.gz
 
-unzip "promtail-linux-arm64.zip"
-chmod a+x promtail-linux-arm64
-sudo mv promtail-linux-arm64 /usr/local/bin/promtail
+sudo mv vector-aarch64-unknown-linux-musl/bin/vector /usr/local/bin/
+sudo mkdir -p /etc/vector /var/lib/vector
 
-promtail --version
+- clean chunks
+rm -rf vector-0.34.1-aarch64-unknown-linux-musl.tar.gz vector-aarch64-unknown-linux-musl
 
-rm -rf promtail-linux-arm64.zip
+- check vector install
+vector --version
 
-sudo mkdir -p /etc/promtail
-sudo vi /etc/promtail/config.yml
+- create vector config file (on each worker and change instance name)
+sudo vi /etc/vector/vector.toml
 -- debut code
-server:
-  #http_listen_port: 9080
-  #grpc_listen_port: 0
-  http_listen_address: 127.0.0.1
-  http_listen_port: 9080
-  grpc_listen_port: 0
-  log_level: error  # Réduit aussi le bruit des logs de l'agent
-
-clients:
-  - url: http://picomaster:3101/loki/api/v1/push
-
-scrape_configs:
-  - job_name: k3s_nodes
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          instance: "picoworker1" # À changer en "picoworker1" sur le deuxième nœud ...
-          cluster: "jetson-cluster"
-          __path__: /var/log/pods/*/*/*.log
-
-    pipeline_stages:
-      #- drop:
-      #    source: filename
-      #    expression: ".*kube-system.*" # Ignore les logs système
-      - docker: {} # Parse le format JSON de Docker utilisé par votre K3s
-    
-    relabel_configs:
-      - source_labels: [__path__]
-        regex: .*/pods/kube-system_.*
-        action: drop
-      - source_labels: [__path__]
-        regex: '.*/pods/([^/]+)_([^/]+)_([^/]+)/([^/]+)/.*\.log'
-        target_label: namespace
-        replacement: '$1'
-      - source_labels: [__path__]
-        regex: '.*/pods/([^/]+)_([^/]+)_([^/]+)/([^/]+)/.*\.log'
-        target_label: pod
-        replacement: '$2'
-      - source_labels: [__path__]
-        regex: '.*/pods/([^/]+)_([^/]+)_([^/]+)/([^/]+)/.*\.log'
-        target_label: container
-        replacement: '$4'
+./vector/vector-worker.toml
 -- fin code
 
-sudo vi /etc/systemd/system/promtail.service
+- test config in toml
+sudo /usr/local/bin/vector --config /etc/vector/vector.toml
+
+- create service for vector
+sudo vi /etc/systemd/system/vector.service
 -- debut code
-[Unit]
-Description=Promtail service
-After=network.target
-
-[Service]
-Type=simple
-User=root
-# Ajustez le chemin vers votre binaire et votre config
-ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail/config.yml
-Restart=on-failure
-RestartSec=10s
-TimeoutStartSec=30s
-TimeoutStopSec=30s
-
-[Install]
-WantedBy=multi-user.target
+./vector/vector-worker.service
 -- fin code
 
+# deploy service vector
 sudo systemctl daemon-reload
-sudo systemctl enable --now promtail
-sudo systemctl status promtail
-journalctl -u promtail -f
+sudo systemctl enable --now vector
+sudo systemctl status vector
+journalctl -u vector -f
 
-# reinit promtail
-sudo systemctl stop promtail
-sudo rm -rf /var/log/positions.yaml
-sudo systemctl start promtail
-journalctl -u promtail -f
+##-- (ON MASTER) install vector (0.34.1)
 
--- test global
+- check libc version
+ldd --version # <-- 2.27
+- download vector and install
+curl -L -C - \
+https://github.com/vectordotdev/vector/releases/download/v0.34.1/vector-0.34.1-aarch64-unknown-linux-musl.tar.gz \
+-o vector-0.34.1-aarch64-unknown-linux-musl.tar.gz
 
-curl http://localhost:9080/targets #<-- on Workers
-sudo journalctl -u fluent-bit -f # <-- on master
-  #[output:loki:loki.0] post ok, status=204
+tar xvf vector-0.34.1-aarch64-unknown-linux-musl.tar.gz
+sudo mv vector-aarch64-unknown-linux-musl/bin/vector /usr/local/bin/
+sudo mkdir -p /etc/vector /var/lib/vector
 
-- (on myhost): loki setup
+- clean 
+rm -rf vector-0.34.1-aarch64-unknown-linux-musl.tar.gz vector-aarch64-unknown-linux-musl
 
-.
-├── docker-compose.yml
-└── loki-config.yaml    # Le fichier de config Loki vu précédemment
+- check vector
+vector --version
 
-nano compose.yml
+- create vector config file
+sudo vi /etc/vector/vector.toml
 -- debut code
-version: "3.8"
-
-services:
-  loki:
-    image: grafana/loki:3.6.10
-    container_name: loki
-    hostname: loki
-    volumes:
-      - ./loki-config.yaml:/etc/loki/local-config.yaml
-      - loki_data:/tmp/loki
-    ports:
-      - "9993:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-# create folder loki_data
-volumes:
-  loki_data:
-    driver: local
+./vector/vector-master.toml
 -- fin code
 
-nano loki-config.yaml
+- test d'envoi et reception
+sudo /usr/local/bin/vector --config /etc/vector/vector.toml
+
+- create service for vector
+sudo vi /etc/systemd/system/vector.service
 -- debut code
-auth_enabled: false
-
-server:
-  http_listen_port: 3100
-
-common:
-  path_prefix: /tmp/loki
-  storage:
-    filesystem:
-      chunks_directory: /tmp/loki/chunks
-      rules_directory: /tmp/loki/rules
-  replication_factor: 1
-  ring:
-    kvstore:
-      store: inmemory
-
-limits_config:
-  reject_old_samples: true
-  reject_old_samples_max_age: 72h # Rejette les vieux logs (3j)
-  retention_period: 72h           # Garde les logs 72 heures seulement
-
-table_manager:
-  retention_deletes_enabled: true
-  retention_period: 72h           # Active la suppression automatique après 72h
-
-schema_config:
-  configs:
-    - from: "2026-04-13"         # Date passée pour une nouvelle installation
-      store: tsdb               # Utilise le moteur TSDB (recommandé pour v3.x)
-      object_store: filesystem  # Stockage local des fichiers
-      schema: v13               # Version de schéma pour Loki 3.x
-      index:
-        prefix: index_
-        period: 24h             # Rotation des index toutes les 24h
-
+./vector/vector-master.service
 -- fin code
+
+# deploy service vector
+sudo systemctl daemon-reload
+sudo systemctl enable --now vector
+sudo systemctl status vector
+journalctl -u vector -f
+
+##-- loki set up
+- see ./monitoring/compose
 
 =================== TEST CORE AI MODULES (ALL NODES)
 - CUDA 10.2
@@ -2229,6 +1826,174 @@ k apply -f ~/test-gpu/job-claude-predict-resnet50-light.yaml
   k delete -f ~/test-gpu/job-claude-predict-resnet50-light.yaml
 k get pods -n claude-ia -w # <-- wait until RUNNING state
 k logs -f job/job-claude-predict-resnet50-light -n claude-ia
+
+============================== VIDEOS STREAM FROM MY PC OR PHONE
+- on pc start live stream on OBS and also nginx-rtmp (docker compose) with:
+  url: rtmp://192.168.1.4/live
+  key: test
+- pipeline video stream:
+  myhost (OBS+nginx-rtmp: rtmp://192.168.1.4/live/test) -> 
+    picomaster (mediamtx, [rtmp://picomaster:30935/host_stream, rtsp://picomaster:30554/host_stream], rtsp://mediamtx-service:8554/host_stream) ->
+      picoworker (gpu-processor, RTSP_URL=rtsp://mediamtx-service:8554/host_stream)
+
+- test depuis picocluster
+ffprobe -i rtmp://192.168.1.4/live/test
+
+-- debut output
+ffprobe version 3.4.11-0ubuntu0.1 Copyright (c) 2007-2022 the FFmpeg developers
+  built with gcc 7 (Ubuntu/Linaro 7.5.0-3ubuntu1~18.04)
+  configuration: --prefix=/usr --extra-version=0ubuntu0.1 --toolchain=hardened --libdir=/usr/lib/aarch64-linux-gnu --incdir=/usr/include/aarch64-linux-gnu --enable-gpl --disable-stripping --enable-avresample --enable-avisynth --enable-gnutls --enable-ladspa --enable-libass --enable-libbluray --enable-libbs2b --enable-libcaca --enable-libcdio --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libgme --enable-libgsm --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libpulse --enable-librubberband --enable-librsvg --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libssh --enable-libtheora --enable-libtwolame --enable-libvorbis --enable-libvpx --enable-libwavpack --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzmq --enable-libzvbi --enable-omx --enable-openal --enable-opengl --enable-sdl2 --enable-libdc1394 --enable-libdrm --enable-libiec61883 --enable-chromaprint --enable-frei0r --enable-libopencv --enable-libx264 --enable-shared
+  libavutil      55. 78.100 / 55. 78.100
+  libavcodec     57.107.100 / 57.107.100
+  libavformat    57. 83.100 / 57. 83.100
+  libavdevice    57. 10.100 / 57. 10.100
+  libavfilter     6.107.100 /  6.107.100
+  libavresample   3.  7.  0 /  3.  7.  0
+  libswscale      4.  8.100 /  4.  8.100
+  libswresample   2.  9.100 /  2.  9.100
+  libpostproc    54.  7.100 / 54.  7.100
+Input #0, flv, from 'rtmp://192.168.1.4/live/test':
+  Metadata:
+    Server          : NGINX RTMP (github.com/arut/nginx-rtmp-module)
+    displayWidth    : 1280
+    displayHeight   : 720
+    fps             : 30
+    profile         : 
+    level           : 
+  Duration: 00:00:00.00, start: 539.650000, bitrate: N/A
+    Stream #0:0: Audio: aac (LC), 48000 Hz, stereo, fltp, 163 kb/s
+    Stream #0:1: Video: h264 (High), yuv420p(tv, bt709, progressive), 1280x720 [SAR 1:1 DAR 16:9], 6144 kb/s, 30 fps, 30 tbr, 1k tbn, 60 tbc
+-- fin output
+
+- (ON MASTER) deploy mediamtx
+- create folder ~/k3s_video_env
+mkdir -p ~/k3s_video_env
+- create file ~/k3s_video_env/mediamtx-config.yaml
+
+vi ~/k3s_video_env/mediamtx-config.yaml
+-- debut code
+./rtmp-video-flux/mediamtx-config.yaml
+-- fin code
+
+- deploy and monitoring
+k apply -f ~/k3s_video_env/mediamtx-config.yaml
+
+- test
+# open vlc
+# url: rtmp://picomaster:30935/mystream
+
+- USING OpenCV & YOLO
+- create a Dockerfile
+vi ~/k3s_video_env/Dockerfile
+-- debut code
+./rtmp-video-flux/builds/Dockerfile
+-- fin code
+
+- build, save image
+# Construction de l'image (cela peut prendre du temps sur Jetson)
+docker build -t picomaster:30500/gpu-processor:v1 ~/k3s_video_env/
+
+# Envoi vers votre registre local
+# docker push picomaster:30500/gpu-processor:v1
+
+- use image
+vi ~/k3s_video_env/video-processor-gpu.yaml
+-- debut code
+./rtmp-video-flux/video-processor-gpu.yaml
+-- fin code
+
+k apply -f ~/k3s_video_env/video-processor-gpu.yaml
+  kubectl exec -it -n media video-processor-gpu-865975dcb4-mq7qc -- /bin/bash
+  kubectl exec -it -n media video-processor-gpu-7df69dd66d-94p6n -- gst-inspect-1.0 nvv4l2decoder
+
+--- trash suite
+Un dernier détail crucial : le Socket NVIDIA
+Pour que les drivers fonctionnent sans erreur "Argus" ou "Socket", vous devez monter le socket de communication NVIDIA dans votre Pod YAML :
+
+volumeMounts:
+- name: nv-socket
+  mountPath: /tmp/argus_socket
+volumes:
+- name: nv-socket
+  hostPath:
+    path: /tmp/argus_socket
+
+
+Note : Si le dossier /tmp/argus_socket n'existe pas sur votre hôte S1/S2, ce n'est pas grave pour le décodage RTMP, mais c'est mieux de l'avoir.
+--- fin trash suite
+
+- use image with python code to read stream vide
+processor.py
+
+-- debut code
+import cv2
+import os
+import sys
+
+# Récupération de l'URL via les variables d'environnement du Pod
+# Format attendu : rtmp://mediamtx-service:1935/host_stream
+rtmp_url = os.getenv('RTMP_URL', 'rtmp://mediamtx-service:1935/host_stream')
+
+# PIPELINE GSTREAMER OPTIMISÉ POUR JETSON NANO (JetPack 4.6.6)
+# 1. rtmpsrc : Capture le flux RTMP
+# 2. flvdemux/h264parse : Extrait le H264
+# 3. nvv4l2decoder : Décodage matériel sur le GPU (NVDEC)
+# 4. nvvidconv : Transfert de la mémoire GPU (NVMM) vers la mémoire système (Raw)
+# 5. videoconvert : Conversion finale en format BGR pour OpenCV
+gst_pipeline = (
+    f"rtmpsrc location={rtmp_url} ! "
+    "flvdemux ! h264parse ! nvv4l2decoder ! "
+    "nvvidconv ! video/x-raw, format=BGRx ! "
+    "videoconvert ! video/x-raw, format=BGR ! appsink drop=true"
+)
+
+def main():
+    print(f"Initialisation du flux : {rtmp_url}")
+    
+    # Tentative d'ouverture avec le backend GStreamer
+    cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+
+    if not cap.isOpened():
+        print("Erreur : Impossible d'ouvrir le pipeline GStreamer.")
+        print("Vérifiez la connectivité vers MediaMTX et la présence des drivers NVIDIA.")
+        sys.exit(1)
+
+    print("Connexion établie. Début du traitement GPU...")
+    
+    try:
+        frame_count = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("Flux interrompu.")
+                break
+
+            # --- LOGIQUE DE TRAITEMENT ---
+            # Exemple : On affiche un log toutes les 300 frames
+            frame_count += 1
+            if frame_count % 300 == 0:
+                print(f"Frames traitées : {frame_count} | Résolution : {frame.shape[1]}x{frame.shape[0]}")
+
+    except KeyboardInterrupt:
+        print("Arrêt par l'utilisateur.")
+    finally:
+        cap.release()
+        print("Ressources libérées.")
+
+if __name__ == "__main__":
+    main()
+
+-- fin code
+
+- use in video-processor-gpu.yaml
+  create folder in usb1 and mount (like /k3s-ext-1/code[script, results])
+  copy processor.py inside folder [script]
+  in video-processor-gpu.yaml:
+    # APPEL DIRECT DU SCRIPT ICI
+    command: ["python3", "/mnt/scripts/processor.py"]
+
+
+
 
 ============================== EXTRAS: TEST AND OUTPUTS EXPLAIN
 
