@@ -1828,16 +1828,23 @@ k get pods -n claude-ia -w # <-- wait until RUNNING state
 k logs -f job/job-claude-predict-resnet50-light -n claude-ia
 
 ============================== VIDEOS STREAM FROM MY PC OR PHONE
-- on pc start live stream on OBS and also nginx-rtmp (docker compose) with:
-  url: rtmp://192.168.1.4/live
-  key: test
+
+- steps (mediamtx will be stream publisher):
+  start mediamtx on k3s
+  on OBS:
+    config: settings -> output -> video bitrate (30000 Kps)
+    settings -> stream -> server = "rtmp://picomaster:30935" + stream key ="host_stream"
+    create scene "k3s"
+    add source in scene "k3s", video Device capture (V4L2) [use your camera]    
+    click on "start stream"
+
 - pipeline video stream:
-  myhost (OBS+nginx-rtmp: rtmp://192.168.1.4/live/test) -> 
+  myhost (OBS stream: rtmp://picomaster30935/) + key="host_stream" -> 
     picomaster (mediamtx, [rtmp://picomaster:30935/host_stream, rtsp://picomaster:30554/host_stream], rtsp://mediamtx-service:8554/host_stream) ->
-      picoworker (gpu-processor, RTSP_URL=rtsp://mediamtx-service:8554/host_stream)
+      picoworker (gpu-processor, RTSP_URL=rtsp://mediamtx-service:8554/host_stream) -> use by models
 
 - test depuis picocluster
-ffprobe -i rtmp://192.168.1.4/live/test
+ffprobe -i rtmp://picomaster:30935/host_stream
 
 -- debut output
 ffprobe version 3.4.11-0ubuntu0.1 Copyright (c) 2007-2022 the FFmpeg developers
@@ -1865,7 +1872,7 @@ Input #0, flv, from 'rtmp://192.168.1.4/live/test':
     Stream #0:1: Video: h264 (High), yuv420p(tv, bt709, progressive), 1280x720 [SAR 1:1 DAR 16:9], 6144 kb/s, 30 fps, 30 tbr, 1k tbn, 60 tbc
 -- fin output
 
-- (ON MASTER) deploy mediamtx
+- (ON MASTER) deploy mediamtx (k3s)
 - create folder ~/k3s_video_env
 mkdir -p ~/k3s_video_env
 - create file ~/k3s_video_env/mediamtx-config.yaml
@@ -1880,31 +1887,101 @@ k apply -f ~/k3s_video_env/mediamtx-config.yaml
 
 - test
 # open vlc
-# url: rtmp://picomaster:30935/mystream
+# url: rtmp://picomaster:30935/host_stream
 
-- USING OpenCV & YOLO
-- create a Dockerfile
-vi ~/k3s_video_env/Dockerfile
+- ***** USING OpenCV & YOLO *******
+
+mkdir -p ~/k3s_video_env/Dockerfiles/Dockerfile_no_cuda
+
+- create a Dockerfile [NO CUDA]
+vi ~/k3s_video_env/Dockerfiles/Dockerfile_no_cuda/Dockerfile
+
 -- debut code
-./rtmp-video-flux/builds/Dockerfile
+./rtmp-video-flux/builds/no-cuda/Dockerfile
 -- fin code
 
 - build, save image
 # Construction de l'image (cela peut prendre du temps sur Jetson)
-docker build -t picomaster:30500/gpu-processor:v1 ~/k3s_video_env/
+docker build -t picomaster:30500/gpu-processor:no-cuda ~/k3s_video_env/Dockerfiles/Dockerfile_no_cuda/
 
 # Envoi vers votre registre local
-# docker push picomaster:30500/gpu-processor:v1
+# docker push picomaster:30500/gpu-processor:no-cuda
 
 - use image
-vi ~/k3s_video_env/video-processor-gpu.yaml
+vi ~/k3s_video_env/Dockerfiles/Dockerfile_no_cuda/video-processor-gpu-no-cuda.yaml
 -- debut code
-./rtmp-video-flux/video-processor-gpu.yaml
+./rtmp-video-flux/video-processor-gpu-no-cuda.yaml
 -- fin code
 
-k apply -f ~/k3s_video_env/video-processor-gpu.yaml
-  kubectl exec -it -n media video-processor-gpu-865975dcb4-mq7qc -- /bin/bash
-  kubectl exec -it -n media video-processor-gpu-7df69dd66d-94p6n -- gst-inspect-1.0 nvv4l2decoder
+k apply -f ~/k3s_video_env/Dockerfiles/Dockerfile_no_cuda/video-processor-gpu-no-cuda.yaml
+  kubectl exec -it -n media video-processor-gpu-no-cuda-865975dcb4-mq7qc -- /bin/bash
+  kubectl exec -it -n media video-processor-gpu-no-cuda-7df69dd66d-94p6n -- gst-inspect-1.0 nvv4l2decoder
+
+- ********** USING OpenCV & YOLO ********
+
+- create folder on master
+sudo mkdir -p /k3s-ext-1/yolo/scripts /k3s-ext-1/yolo/models
+mkdir -p ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda
+
+- nfs accessibility
+sudo vi /etc/exports
+
+-- add
+/k3s-ext-1/yolo *(rw,sync,no_subtree_check,no_root_squash)
+--fin add
+
+sudo exportfs -ra
+showmount -e picomaster #(workers)
+
+- download YOLO weights
+wget https://huggingface.co/Ultralytics/YOLOv8/resolve/main/yolov8n.pt
+sudo mv yolov8n.pt /k3s-ext-1/yolo/models
+
+- create a Dockerfile [WITH CUDA]
+vi ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/Dockerfile
+
+-- debut code
+./rtmp-video-flux/builds/with-cuda/Dockerfile
+-- fin code
+
+- build, save image
+# Construction de l'image (cela peut prendre du temps sur Jetson)
+docker build -t picomaster:30500/gpu-processor:with-cuda ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/
+
+# Envoi vers votre registre local
+# docker push picomaster:30500/gpu-processor:with-cuda
+
+- use image
+vi ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml
+-- debut code
+./rtmp-video-flux/video-processor-gpu-with-cuda.yaml
+-- fin code
+
+k apply -f ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml
+  kubectl exec -it -n media video-processor-gpu-with-cuda-7df69dd66d-94p6n -- gst-inspect-1.0 nvv4l2decoder
+  kubectl logs -f deployment/video-processor-gpu-with-cuda -n media
+  kubectl exec -it -n media video-processor-gpu-with-cuda-865975dcb4-mq7qc -- /bin/bash
+    test:
+      python3
+      >> import cv2
+      >> import os
+      >> import sys
+      >> from ultralytics import YOLO
+      >> RTSP_URL = os.getenv("RTSP_URL", "rtsp://mediamtx-service:8554/host_stream")
+      >> MODEL_PATH = os.getenv("MODEL_PATH", "/mnt/yolo/models/yolov8n.pt")
+      >> model = YOLO(MODEL_PATH).to('cuda')
+      >> model.predict(source=None, imgsz=320, half=True)
+      >> print(f"Modèle {MODEL_PATH} chargé avec succès en FP16.")
+
+- k delete -f ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml  
+- processor python code
+sudo vi /k3s-ext-1/yolo/scripts/processor-with-cuda.py
+
+-- debut code
+./rtmp-video-flux/processor-with-cuda.py
+-- fin code
+
+
 
 --- trash suite
 Un dernier détail crucial : le Socket NVIDIA

@@ -38,7 +38,7 @@ ENV LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/tegra
 
 # Installation des librairies Python pour le traitement (ex: Ultralytics/YOLO ou OpenCV seul)
 RUN python3 -m pip install --no-cache-dir --upgrade pip
-RUN python3 -m pip install --no-cache-dir numpy
+RUN python3 -m pip install --no-cache-dir numpy ultralytics
 
 # Définition des variables d'environnement NVIDIA pour le runtime
 ENV NVIDIA_VISIBLE_DEVICES all

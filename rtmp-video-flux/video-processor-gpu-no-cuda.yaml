@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: video-processor-gpu
+  name: video-processor-gpu-no-cuda
   namespace: media
 spec:
   replicas: 1 # Un sur S1, un sur S2 (si disponible)
@@ -18,7 +18,8 @@ spec:
       hostNetwork: true
       containers:
       - name: processor
-        image: picomaster:30500/gpu-processor:v1
+        image: picomaster:30500/gpu-processor:no-cuda
+        command: ["sleep", "infinity"] # Empêche le CrashLoop
         securityContext:
           privileged: true
         env:

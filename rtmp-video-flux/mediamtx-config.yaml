@@ -13,13 +13,29 @@ data:
     paths:
       # On définit un chemin local "host_stream"
       host_stream:
-        # MediaMTX va chercher (pull) le flux sur votre PC
-        source: rtmp://192.168.1.4/live/test
+        ## MediaMTX va chercher (pull) le flux sur votre PC
+        #source: rtmp://192.168.1.4/live/test
+        source: publisher
         # Reconnexion automatique si le PC coupe le flux
         sourceOnDemand: false
 
+    # Protocoles activés
+    rtsp: yes
+    rtmp: yes
+    hls: yes
+    webrtc: yes
+
+    # Désactivation des protocoles inutilisés pour économiser le CPU
+    srt: no
+
     rtspTransports: [udp, multicast, tcp]
-    writeQueueSize: 1024    
+    writeQueueSize: 1024
+
+    # Ports par défaut
+    rtspAddress: :8554
+    rtmpAddress: :1935
+    hlsAddress: :8888    
+    webrtcAddress: :8889
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -36,7 +52,7 @@ spec:
       labels:
         app: mediamtx
     spec:
-      ## Force le déploiement sur le Maître (M) car c'est le seul qui voit votre PC
+      ## Force le déploiement sur le Maître (picomaster) car c'est le seul qui voit votre PC
       #nodeSelector:
       #  node-role.kubernetes.io/control-plane: "true"
       hostNetwork: true
@@ -55,6 +71,9 @@ spec:
           limits:
             cpu: "500m"
             memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
       volumes:
       - name: config
         configMap:
@@ -80,3 +99,7 @@ spec:
       port: 1935
       targetPort: 1935
       nodePort: 30935
+    - name: webrtc
+      port: 8889
+      targetPort: 8889
+      nodePort: 31889
