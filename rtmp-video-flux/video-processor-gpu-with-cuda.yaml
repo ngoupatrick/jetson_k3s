@@ -13,29 +13,35 @@ spec:
       labels:
         app: video-processor
     spec:
-      #nodeSelector:
-      #  hardware: "gpu" # Utilise les labels définis lors de l'install K3s
+      nodeSelector:
+        hardware: "gpu" # Utilise les labels définis lors de l'install K3s
       hostNetwork: true
       containers:
       - name: processor
         image: picomaster:30500/gpu-processor:with-cuda
-        command: ["sleep", "infinity"] # Empêche le CrashLoop (FOR TEST)
-        #command: ["/bin/bash", "-c"]
-        #args:
-        #  - |
-        #    python3 /mnt/yolo/scripts/processor-with-cuda.py
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            python3.6 /mnt/yolo/scripts/processor-with-cuda.py \
+            --stream_key "phone_stream" \
+            --engine_path "/mnt/yolo/models/yolov8n.engine"
         securityContext:
           privileged: true
         env:
         #- name: LD_LIBRARY_PATH
         #  value: "/usr/lib/aarch64-linux-gnu/tegra"
+        # rtsp://mediamtx-service:8554/host_stream
         - name: RTSP_URL # On peut utiliser RTSP même si la source est RTMP
           value: "rtsp://mediamtx-service:8554/host_stream"
-        - name: MODEL_PATH # Path vers le modèle YOLO sur le NFS
-          value: "/mnt/yolo/models/yolov8n.pt"
+        - name: MODEL_ENGINE_PATH # Path vers le modèle YOLO sur le NFS
+          value: "/mnt/yolo/models/yolov8n.engine"
+        - name: LD_PRELOAD
+          value: "/usr/lib/aarch64-linux-gnu/libgomp.so.1"
+        #- name: LD_LIBRARY_PATH
+          #value: "/usr/local/cuda-10.2/lib64"
         resources:
           limits:
-            nvidia.com/gpu: 1
+            #nvidia.com/gpu: 1
             memory: "2500Mi"
           requests:
             cpu: "500m"
@@ -43,13 +49,21 @@ spec:
         volumeMounts:
           - name: yolo-volume
             mountPath: /mnt/yolo
-        #- name: tegra-libs
-        #  mountPath: /usr/lib/aarch64-linux-gnu/tegra
+            readOnly: true
+          - name: cuda-volume
+            mountPath: /usr/local/cuda-10.2
+            readOnly: true
+          #- name: tegra-libs
+          #  mountPath: /usr/lib/aarch64-linux-gnu/tegra
       volumes:
       - name: yolo-volume
         nfs:
           server: picomaster
           path: /k3s-ext-1/yolo
+      - name: cuda-volume
+        hostPath:
+          path: /usr/local/cuda-10.2
+          type: Directory
       #- name: tegra-libs
       #  hostPath:
       #    path: /usr/lib/aarch64-linux-gnu/tegra

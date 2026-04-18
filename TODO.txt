@@ -1,6 +1,6 @@
 TODO:
 jetpack 4.6.6 k3s v1.24.17+k3s1
-nodes M, S1, S2. S1 & S2 can talk to only M, and only can talk to myhost
+nodes M, S1, S2. S1 & S2 can talk to only M, and only can talk to myhost. all nodes have acces to internet
 myhost(prometheus(federate+longterm storage)+grafana[storage+dashboard]+alerts [slack, Mail]) -> M(prometheus, collect metrics for S1 & S2 & M  + 2h storage) --> S1,S2 (jetson-exporter, collect metrics and send to M).
 myhost(loki(federate+longterm storage)+grafana[storage+dashboard]+alerts [slack, Mail]) -> M(fluent-bit, collect logs for S1 & S2 & M  + 2h storage) --> S1,S2 (promtail, collect logs and send to M).
 curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" sh -s - server \
@@ -18,6 +18,8 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" sh -s - serve
   --docker \
   --write-kubeconfig-mode 644
 
+# dependency management
+# https://deps.dev
 
 use timm
 tools to deply easily on k3s cluster
@@ -30,7 +32,6 @@ use midiamtx as pull with OBS, not push
 
 use stream in opencv code
   use case:
-    Détection d'objets avec YOLO (v5 ou v8)
     Détection de mouvement (MOG2)
     Mesure de Télémétrie / Statistiques
     Sauvegarde Sélective (Snapshot)
@@ -41,4 +42,8 @@ Promtail / Alloy / loki / grafana
 https://blog.stephane-robert.info/docs/outils/observabilite/logs/loki/
 
 pyspark using our k3s cluster
+
+
+
+
 

@@ -1,6 +1,5 @@
 #!/home/picocluster/k3s_monitor_env/venv/bin/python3
 import os
-import threading
 from kubernetes import client, config, watch
 from prometheus_client import start_http_server, Gauge, REGISTRY, PROCESS_COLLECTOR, PLATFORM_COLLECTOR, GC_COLLECTOR
 
@@ -32,66 +31,23 @@ job_status = Gauge('k3s_job_status', 'Status of K3s Job (1=Succ, 0=Fail, 2=Run)'
 
 # add new metric for pods, then implement later
 # pod_status = Gauge('k3s_pod_status', 'Status of K3s Pod (1=Running, 0=Not Running)', ['pod_name', 'namespace'])
-# 1=Running, 0=Failed, 2=Pending, 3=Succeeded (Complet), 4=Unknown
-pod_status = Gauge('k3s_pod_status', 'Status of K3s Pod (1=Running, 0=Failed, 2=Pending, 3=Succeeded, 4=Unknown)', ['pod_name', 'namespace', 'node_name'])
 
-def watch_jobs():
-    v1_batch = client.BatchV1Api()
+def monitor():
+    # Utilise ~/.kube/config, <-- check /etc/systemd/system/k3s-job-watcher.service KUBECONFIG env var
+    config.load_kube_config()
+    v1 = client.BatchV1Api()
     w = watch.Watch()
-    for event in w.stream(v1_batch.list_job_for_all_namespaces):
+    
+    # Le stream est passif (consomme peu de CPU)
+    for event in w.stream(v1.list_job_for_all_namespaces):
         job = event['object']
         name, ns = job.metadata.name, job.metadata.namespace
-        
-        if event['type'] == 'DELETED':
-            try:
-                job_status.remove(name, ns)
-            except KeyError:
-                pass
-            
         if job.status.succeeded:
             job_status.labels(job_name=name, namespace=ns).set(1)
         elif job.status.failed:
             job_status.labels(job_name=name, namespace=ns).set(0)
         else:
             job_status.labels(job_name=name, namespace=ns).set(2)
-            
-def watch_pods():
-    v1_core = client.CoreV1Api()
-    w = watch.Watch()
-    # Mapping des phases de pods en entiers pour Prometheus
-    status_map = {
-        "Running": 1,
-        "Failed": 0,
-        "Pending": 2,
-        "Succeeded": 3
-    }
-    for event in w.stream(v1_core.list_pod_for_all_namespaces):
-        pod = event['object']
-        name, ns = pod.metadata.name, pod.metadata.namespace
-        phase = pod.status.phase # Running, Pending, Succeeded, Failed, Unknown
-        node_name = pod.spec.node_name if pod.spec.node_name else "unassigned"
-        
-        val = status_map.get(phase, 4) # 4 par défaut pour "Unknown"
-        pod_status.labels(pod_name=name, namespace=ns, node_name=node_name).set(val)
-        
-        # Nettoyage automatique si le pod est supprimé
-        if event['type'] == 'DELETED':
-            pod_status.remove(name, ns, node_name)
-
-def monitor():
-    # Utilise ~/.kube/config, <-- check /etc/systemd/system/k3s-job-watcher.service KUBECONFIG env var
-    config.load_kube_config()
-    
-    # Lancement des deux watchers dans des threads séparés
-    t1 = threading.Thread(target=watch_jobs, daemon=True)
-    t2 = threading.Thread(target=watch_pods, daemon=True)
-    
-    t1.start()
-    t2.start()
-    
-    # Garde le thread principal en vie
-    t1.join()
-    t2.join()
 
 if __name__ == '__main__':
     start_http_server(9101)

@@ -13,17 +13,16 @@ data:
     paths:
       # On définit un chemin local "host_stream"
       host_stream:
-        ## MediaMTX va chercher (pull) le flux sur votre PC
-        #source: rtmp://192.168.1.4/live/test
         source: publisher
-        # Reconnexion automatique si le PC coupe le flux
-        sourceOnDemand: false
+      # On définit un chemin local "phone_stream"
+      phone_stream:
+        source: publisher
 
     # Protocoles activés
     rtsp: yes
     rtmp: yes
-    hls: yes
-    webrtc: yes
+    #hls: yes
+    #webrtc: yes
 
     # Désactivation des protocoles inutilisés pour économiser le CPU
     srt: no
@@ -34,8 +33,8 @@ data:
     # Ports par défaut
     rtspAddress: :8554
     rtmpAddress: :1935
-    hlsAddress: :8888    
-    webrtcAddress: :8889
+    #hlsAddress: :8888    
+    #webrtcAddress: :8889
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -62,7 +61,7 @@ spec:
         ports:
         - containerPort: 8554 # RTSP
         - containerPort: 1935 # RTMP (Optionnel pour Phone)
-        - containerPort: 8888 # HLS/WebRTC (Optionnel)
+        #- containerPort: 8888 # HLS/WebRTC (Optionnel)
         volumeMounts:
         - name: config
           mountPath: /mediamtx.yml
@@ -99,7 +98,7 @@ spec:
       port: 1935
       targetPort: 1935
       nodePort: 30935
-    - name: webrtc
-      port: 8889
-      targetPort: 8889
-      nodePort: 31889
+    #- name: webrtc
+    #  port: 8889
+    #  targetPort: 8889
+    #  nodePort: 31889

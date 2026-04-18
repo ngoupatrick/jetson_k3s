@@ -428,12 +428,12 @@ vi ~/k3s_monitor_env/test_kubernetes_watch.py
 ~/k3s_monitor_env/venv/bin/python ~/k3s_monitor_env/test_kubernetes_watch.py
 
 # (ON MASTER) script use to collect jobs states (later we can add, pods, deployements, ...)
-vi ~/k3s_monitor_env/k3s_job_watcher.py
+vi ~/k3s_monitor_env/k3s_cluster_watcher.py
 -- debut code
-./monitoring/k3s_job_watcher.py
+./monitoring/k3s_cluster_watcher.py
 -- fin code
 
-# deploy k3s_job_watcher.py as a service, use to produce jobs status
+# deploy k3s_cluster_watcher.py as a service, use to produce jobs status
 sudo vi /etc/systemd/system/k3s-cluster-watcher.service
 -- debut code
 ./monitoring/k3s-cluster-watcher.service
@@ -1533,11 +1533,32 @@ curl -X DELETE http://picomaster:30500/v2/my-alpine/manifests/<LE_DIGEST>
 
 # use GC (garbage collector) to clean registry
 k get pods -n registry # <-- get registry pod name <NOM_DU_POD_REGISTRY>
-kubectl exec -it <NOM_DU_POD_REGISTRY> -n registry -- bin/registry garbage-collect /etc/docker/registry/config.yml
+k exec -it <NOM_DU_POD_REGISTRY> -n registry -- bin/registry garbage-collect /etc/docker/registry/config.yml
 	exple:
-    kubectl exec -it private-registry-65cbfdcc58-bphxh -n registry -- bin/registry garbage-collect /etc/docker/registry/config.yml
+    k exec -it private-registry-65cbfdcc58-bphxh -n registry -- bin/registry garbage-collect /etc/docker/registry/config.yml
 # check usb2 space
 df -h /k3s-ext-2
+
+# DELETION EXAMPLE
+
+k get pods -n registry # <-- retrieve pods
+pods_=private-registry-9c949cbdb-ht8xj
+
+registry='picomaster:30500'
+name='l4t-tensorrt'
+
+curl -X GET http://${registry}/v2/_catalog
+
+tag=$(curl -sSL "http://${registry}/v2/${name}/tags/list" | jq -r '.tags[0]')
+echo $tag
+
+digest=$(curl -sSL -I -H "Accept: application/vnd.docker.distribution.manifest.v2+json" "http://${registry}/v2/${name}/manifests/${tag}" | awk '$1 == "Docker-Content-Digest:" { print $2 }' | tr -d $'\r')
+echo $digest
+
+curl -v -sSL -X DELETE "http://${registry}/v2/${name}/manifests/${digest}"
+
+k exec -it ${pods_} -n registry -- /bin/sh rm -rf /var/lib/registry/docker/registry/v2/repositories/${name}/_manifests/tags/
+k exec -it ${pods_} -n registry -- bin/registry garbage-collect /etc/docker/registry/config.yml
 
 ============================= BUILD OUR OWN BASE IMAGE (V1)
 
@@ -1845,6 +1866,7 @@ k logs -f job/job-claude-predict-resnet50-light -n claude-ia
 
 - test depuis picocluster
 ffprobe -i rtmp://picomaster:30935/host_stream
+  ffprobe -i rtmp://mediamtx-service:8554/host_stream
 
 -- debut output
 ffprobe version 3.4.11-0ubuntu0.1 Copyright (c) 2007-2022 the FFmpeg developers
@@ -1889,7 +1911,7 @@ k apply -f ~/k3s_video_env/mediamtx-config.yaml
 # open vlc
 # url: rtmp://picomaster:30935/host_stream
 
-- ***** USING OpenCV & YOLO *******
+- ***** USING OpenCV & YOLO ******* (!!!!! NO)
 
 mkdir -p ~/k3s_video_env/Dockerfiles/Dockerfile_no_cuda
 
@@ -1918,6 +1940,10 @@ k apply -f ~/k3s_video_env/Dockerfiles/Dockerfile_no_cuda/video-processor-gpu-no
   kubectl exec -it -n media video-processor-gpu-no-cuda-7df69dd66d-94p6n -- gst-inspect-1.0 nvv4l2decoder
 
 - ********** USING OpenCV & YOLO ********
+# make sure you deploy ~/k3s_video_env/mediamtx-config.yaml
+# k apply -f ~/k3s_video_env/mediamtx-config.yaml
+# dependency management libs
+# https://deps.dev
 
 - create folder on master
 sudo mkdir -p /k3s-ext-1/yolo/scripts /k3s-ext-1/yolo/models
@@ -1934,8 +1960,20 @@ sudo exportfs -ra
 showmount -e picomaster #(workers)
 
 - download YOLO weights
-wget https://huggingface.co/Ultralytics/YOLOv8/resolve/main/yolov8n.pt
-sudo mv yolov8n.pt /k3s-ext-1/yolo/models
+wget https://github.com/yoobright/yolo-onnx/raw/refs/heads/master/yolov8n.onnx
+
+- convert onnx to engine
+/usr/src/tensorrt/bin/trtexec \
+  --onnx=yolov8n.onnx \
+  --saveEngine=yolov8n.engine \
+  --fp16 \
+  --explicitBatch \
+  --inputIOFormats=fp16:chw \
+  --outputIOFormats=fp16:chw \
+  --workspace=1024
+
+- move models to correct folder
+sudo mv yolov8n.onnx yolov8n.engine /k3s-ext-1/yolo/models/
 
 - create a Dockerfile [WITH CUDA]
 vi ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/Dockerfile
@@ -1949,127 +1987,28 @@ vi ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/Dockerfile
 docker build -t picomaster:30500/gpu-processor:with-cuda ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/
 
 # Envoi vers votre registre local
-# docker push picomaster:30500/gpu-processor:with-cuda
+docker push picomaster:30500/gpu-processor:with-cuda
 
-- use image
-vi ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml
--- debut code
-./rtmp-video-flux/video-processor-gpu-with-cuda.yaml
--- fin code
-
-k apply -f ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml
-  kubectl exec -it -n media video-processor-gpu-with-cuda-7df69dd66d-94p6n -- gst-inspect-1.0 nvv4l2decoder
-  kubectl logs -f deployment/video-processor-gpu-with-cuda -n media
-  kubectl exec -it -n media video-processor-gpu-with-cuda-865975dcb4-mq7qc -- /bin/bash
-    test:
-      python3
-      >> import cv2
-      >> import os
-      >> import sys
-      >> from ultralytics import YOLO
-      >> RTSP_URL = os.getenv("RTSP_URL", "rtsp://mediamtx-service:8554/host_stream")
-      >> MODEL_PATH = os.getenv("MODEL_PATH", "/mnt/yolo/models/yolov8n.pt")
-      >> model = YOLO(MODEL_PATH).to('cuda')
-      >> model.predict(source=None, imgsz=320, half=True)
-      >> print(f"Modèle {MODEL_PATH} chargé avec succès en FP16.")
-
-- k delete -f ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml  
-- processor python code
+- create python code "processor-with-cuda.py"
 sudo vi /k3s-ext-1/yolo/scripts/processor-with-cuda.py
 
 -- debut code
 ./rtmp-video-flux/processor-with-cuda.py
 -- fin code
 
-
-
---- trash suite
-Un dernier détail crucial : le Socket NVIDIA
-Pour que les drivers fonctionnent sans erreur "Argus" ou "Socket", vous devez monter le socket de communication NVIDIA dans votre Pod YAML :
-
-volumeMounts:
-- name: nv-socket
-  mountPath: /tmp/argus_socket
-volumes:
-- name: nv-socket
-  hostPath:
-    path: /tmp/argus_socket
-
-
-Note : Si le dossier /tmp/argus_socket n'existe pas sur votre hôte S1/S2, ce n'est pas grave pour le décodage RTMP, mais c'est mieux de l'avoir.
---- fin trash suite
-
-- use image with python code to read stream vide
-processor.py
-
+- use image (CAMERE: --stream_key="host_stream for laptop OBS" & --stream_key="phone_stream for iphone rtmp publisher")
+vi ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml
 -- debut code
-import cv2
-import os
-import sys
-
-# Récupération de l'URL via les variables d'environnement du Pod
-# Format attendu : rtmp://mediamtx-service:1935/host_stream
-rtmp_url = os.getenv('RTMP_URL', 'rtmp://mediamtx-service:1935/host_stream')
-
-# PIPELINE GSTREAMER OPTIMISÉ POUR JETSON NANO (JetPack 4.6.6)
-# 1. rtmpsrc : Capture le flux RTMP
-# 2. flvdemux/h264parse : Extrait le H264
-# 3. nvv4l2decoder : Décodage matériel sur le GPU (NVDEC)
-# 4. nvvidconv : Transfert de la mémoire GPU (NVMM) vers la mémoire système (Raw)
-# 5. videoconvert : Conversion finale en format BGR pour OpenCV
-gst_pipeline = (
-    f"rtmpsrc location={rtmp_url} ! "
-    "flvdemux ! h264parse ! nvv4l2decoder ! "
-    "nvvidconv ! video/x-raw, format=BGRx ! "
-    "videoconvert ! video/x-raw, format=BGR ! appsink drop=true"
-)
-
-def main():
-    print(f"Initialisation du flux : {rtmp_url}")
-    
-    # Tentative d'ouverture avec le backend GStreamer
-    cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-
-    if not cap.isOpened():
-        print("Erreur : Impossible d'ouvrir le pipeline GStreamer.")
-        print("Vérifiez la connectivité vers MediaMTX et la présence des drivers NVIDIA.")
-        sys.exit(1)
-
-    print("Connexion établie. Début du traitement GPU...")
-    
-    try:
-        frame_count = 0
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("Flux interrompu.")
-                break
-
-            # --- LOGIQUE DE TRAITEMENT ---
-            # Exemple : On affiche un log toutes les 300 frames
-            frame_count += 1
-            if frame_count % 300 == 0:
-                print(f"Frames traitées : {frame_count} | Résolution : {frame.shape[1]}x{frame.shape[0]}")
-
-    except KeyboardInterrupt:
-        print("Arrêt par l'utilisateur.")
-    finally:
-        cap.release()
-        print("Ressources libérées.")
-
-if __name__ == "__main__":
-    main()
-
+./rtmp-video-flux/video-processor-gpu-with-cuda.yaml
 -- fin code
 
-- use in video-processor-gpu.yaml
-  create folder in usb1 and mount (like /k3s-ext-1/code[script, results])
-  copy processor.py inside folder [script]
-  in video-processor-gpu.yaml:
-    # APPEL DIRECT DU SCRIPT ICI
-    command: ["python3", "/mnt/scripts/processor.py"]
-
-
+k apply -f ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml
+  k get services -n media -o wide
+  k get deploy -n media -o wide
+  k get pods -n media -w
+  k logs -f deployment/video-processor-gpu-with-cuda -n media
+  k exec -it -n media video-processor-gpu-with-cuda-865975dcb4-mq7qc -- /bin/bash
+  k delete -f ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml  
 
 
 ============================== EXTRAS: TEST AND OUTPUTS EXPLAIN
