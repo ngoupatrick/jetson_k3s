@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deploy-claude-predict-expose-resnet50-light
+  namespace: claude-ia
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: deploy-claude-predict-expose-resnet50-light
+  template:
+    metadata:
+      labels:
+        app: deploy-claude-predict-expose-resnet50-light
+    spec:
+      nodeSelector:
+        hardware: "gpu" # Utilise les labels définis lors de l'install K3s
+      hostNetwork: true
+      containers:
+      - name: predictor-flask-expose
+        image: picomaster:30500/jetson-base:light
+        ports:
+        - containerPort: 5000
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            ldconfig /usr/local/cuda-10.2/lib64 && \
+            python3 -m pip install --no-cache-dir flask && \
+            python3 /mnt/code/scripts/predict_expose_resnet50.py
+        securityContext:
+          privileged: true
+        env:
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: all
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: all,utility,compute,video,graphics
+        - name: LD_LIBRARY_PATH
+          value: "/usr/local/cuda-10.2/lib64"
+        resources:
+          limits:
+            #nvidia.com/gpu: 1
+            memory: "2500Mi"        
+        volumeMounts:
+        - name: cuda-volume
+          mountPath: /usr/local/cuda-10.2
+          readOnly: true
+        - name: code-volume
+          mountPath: /mnt/code
+      volumes:
+      - name: cuda-volume
+        hostPath:
+          path: /usr/local/cuda-10.2
+          type: Directory
+      - name: code-volume
+        nfs:
+          server: picomaster
+          path: /k3s-ext-1/code
+      #restartPolicy: Never
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deploy-claude-predict-expose-resnet50-light-service
+  namespace: claude-ia
+spec:
+  type: NodePort
+  selector:
+    app: deploy-claude-predict-expose-resnet50-light
+  ports:
+    - port: 5000
+      targetPort: 5000
+      nodePort: 31080

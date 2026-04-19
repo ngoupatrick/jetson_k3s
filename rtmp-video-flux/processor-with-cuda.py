@@ -9,6 +9,9 @@ import pycuda.autoinit
 import signal
 import logging
 import argparse
+import time
+
+is_up = False
 
 # Desactive les messages WARN et FIXME de GStreamer pour un log propre
 os.environ["GST_DEBUG"] = "0"
@@ -106,14 +109,40 @@ pipeline_str = (
 
 pipeline = Gst.parse_launch(pipeline_str)
 sink = pipeline.get_by_name("sink")
-pipeline.set_state(Gst.State.PLAYING)
-
-logger.info("Inference demarree sur: {}".format(RTSP_URL))
 
 try:
     while running:
+        if not is_up:
+            # Reconstruction du pipeline pour nettoyer les sockets rtspsrc
+            if 'pipeline' in locals():
+                pipeline.set_state(Gst.State.NULL)
+            pipeline = Gst.parse_launch(pipeline_str)
+            sink = pipeline.get_by_name("sink")
+            
+            pipeline.set_state(Gst.State.PLAYING)
+            ret, state, pending = pipeline.get_state(5 * Gst.SECOND)
+            
+            if ret == Gst.StateChangeReturn.FAILURE:
+                is_up = False
+                logger.error("Impossible de se connecter au flux RTSP {}. Nouvelle tentative dans 5s...".format(RTSP_URL))
+                pipeline.set_state(Gst.State.NULL)
+                is_up = False
+                time.sleep(5)
+                continue
+            elif state != Gst.State.PLAYING:
+                continue
+            else:
+                if is_up == False:
+                    logger.info("Connexion au flux RTSP reussie: {}".format(RTSP_URL))
+                    is_up = True
+
         sample = sink.emit("try-pull-sample", 100 * Gst.MSECOND)
         if not sample:
+            # Si on ne reçoit rien, on vérifie si le pipeline est tombé
+            logger.error("Flux perdu ou injoignable. Reconnexion...")
+            pipeline.set_state(Gst.State.NULL)
+            is_up = False
+            time.sleep(5)
             continue
 
         buf = sample.get_buffer()

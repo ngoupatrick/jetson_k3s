@@ -21,7 +21,7 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.24.17+k3s1" sh -s - serve
 # dependency management
 # https://deps.dev
 
-use timm
+
 tools to deply easily on k3s cluster
 send notification when job is failed, running, completed states
 send training and predictions results (via mail, ...)

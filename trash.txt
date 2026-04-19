@@ -1848,6 +1848,51 @@ k apply -f ~/test-gpu/job-claude-predict-resnet50-light.yaml
 k get pods -n claude-ia -w # <-- wait until RUNNING state
 k logs -f job/job-claude-predict-resnet50-light -n claude-ia
 
+============================== TEST EXPOSE PREDICT WITH LIGHT IMAGE THROUGH FLASK
+
+# we are going to expose our image service port 5000 Through nodePort 31080
+# then we can call our api from anywhere like this:
+# import requests
+# resp = requests.post("http://picomaster:31080/predict", files={"image": open("test.jpg", "rb")})
+# print(resp.json())
+
+- first make sure that namespace "claude-ia" exist
+k get ns
+
+- IF NOT: create the namespace "claude-ia"
+vi ~/test-gpu/n-claude.yaml
+-- debut code
+./models/yaml/n-claude.yaml
+-- fin code
+k apply -f ~/test-gpu/n-claude.yaml
+
+- create predict_expose_resnet50.py code running with flask exposing service
+sudo vi /k3s-ext-1/code/scripts/predict_expose_resnet50.py
+-- debut code
+./models/expose_models/predict/predict_expose_resnet50.py
+-- fin code
+
+- create predict yaml to deploy deployement and also service
+vi ~/test-gpu/deploy-claude-predict-expose-resnet50-light.yaml
+-- debut code
+./models/expose_models/yaml/deploy-claude-predict-expose-resnet50-light.yaml
+-- fin code
+
+- deploy all
+k apply -f ~/test-gpu/deploy-claude-predict-expose-resnet50-light.yaml
+  k get services -n claude-ia -o wide
+  k get deploy -n claude-ia -o wide
+  k get pods -n claude-ia -o wide -w
+  k logs -f deployment/deploy-claude-predict-expose-resnet50-light -n claude-ia
+  k exec -it -n claude-ia deploy-claude-predict-expose-resnet50-light-865975dcb4-mq7qc -- /bin/bash
+  k delete -f ~/test-gpu/deploy-claude-predict-expose-resnet50-light.yaml
+
+- test with a python code
+# on myhost use files (./models/expose_models/python_test/[test1.py, test2.py])
+# run
+python3 /home/patrick/Bureau/vpn/jetson_k3s/models/expose_models/python_test/test1.py
+python3 /home/patrick/Bureau/vpn/jetson_k3s/models/expose_models/python_test/test2.py http://picomaster:31080/predict /home/patrick/Bureau/test/water-citron.jpg
+
 ============================== VIDEOS STREAM FROM MY PC OR PHONE
 
 - steps (mediamtx will be stream publisher):
@@ -1940,6 +1985,7 @@ k apply -f ~/k3s_video_env/Dockerfiles/Dockerfile_no_cuda/video-processor-gpu-no
   kubectl exec -it -n media video-processor-gpu-no-cuda-7df69dd66d-94p6n -- gst-inspect-1.0 nvv4l2decoder
 
 - ********** USING OpenCV & YOLO ********
+
 # make sure you deploy ~/k3s_video_env/mediamtx-config.yaml
 # k apply -f ~/k3s_video_env/mediamtx-config.yaml
 # dependency management libs
@@ -2009,6 +2055,49 @@ k apply -f ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-
   k logs -f deployment/video-processor-gpu-with-cuda -n media
   k exec -it -n media video-processor-gpu-with-cuda-865975dcb4-mq7qc -- /bin/bash
   k delete -f ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml  
+
+============================== DEPLOY AN AI CHAT (LIKE CHAT GPT: OLLAMA)
+
+# WORK BUT USE CPU INSTEAD OF GPU
+
+# we are going to deploy ollama as server (used to store models like tinyllama)
+# and also chat ui (used to chat with our model loaded)
+
+- create folder on master
+sudo mkdir -p /k3s-ext-1/chat
+mkdir -p ~/k3s_chat_env
+
+- nfs accessibility
+sudo vi /etc/exports
+
+-- add
+/k3s-ext-1/chat *(rw,sync,no_subtree_check,no_root_squash)
+--fin add
+
+sudo exportfs -ra
+showmount -e picomaster #(workers)
+
+- now we are going to set up deployements using images: 
+# ollama/ollama:latest
+# ghcr.io/open-webui/open-webui:main
+
+vi ~/k3s_chat_env/chat-ollama-gpu.yaml
+-- debut code
+./ai_chat/deploys/chat-ollama-gpu.yaml
+-- fin code
+
+k apply -f ~/k3s_chat_env/chat-ollama-gpu.yaml
+  k get services -n ollama -o wide
+  k get deploy -n ollama -o wide
+  k get pods -n ollama -w
+  k logs -f deployment/chat-ollama-gpu -n ollama
+  k exec -it -n ollama chat-ollama-gpu-865975dcb4-mq7qc -- /bin/bash
+  k delete -f ~/k3s_chat_env/chat-ollama-gpu.yaml
+
+- add model from ui
+# create an admin account
+# right uppper connect -> user -> settings -> bottom (admin settings) -> models -> manage -> "Pull a model from Ollama.com" -> type tinyllama -> "download"
+
 
 
 ============================== EXTRAS: TEST AND OUTPUTS EXPLAIN
