@@ -2051,12 +2051,12 @@ vi ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cud
 k apply -f ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml
   k get services -n media -o wide
   k get deploy -n media -o wide
-  k get pods -n media -w
+  k get pods -n media -o wide -w
   k logs -f deployment/video-processor-gpu-with-cuda -n media
   k exec -it -n media video-processor-gpu-with-cuda-865975dcb4-mq7qc -- /bin/bash
   k delete -f ~/k3s_video_env/Dockerfiles/Dockerfile_with_cuda/video-processor-gpu-with-cuda.yaml  
 
-============================== DEPLOY AN AI CHAT (LIKE CHAT GPT: OLLAMA)
+============================== XXXX (ONLY CPU, BAD!!!) DEPLOY AN AI CHAT (LIKE CHAT GPT: OLLAMA)
 
 # WORK BUT USE CPU INSTEAD OF GPU
 
